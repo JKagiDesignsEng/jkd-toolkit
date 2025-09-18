@@ -1,6 +1,28 @@
-\Exports\
-\Logs\
-*.txt
+# Runtime exports and logs
+Exports/
+Logs/
+DriverBackup_*/
+Drivers/
+
+# Generated JSON/log/debug artifacts
+*.json
 *.log
+
+# Common temporary and backup files
+*.tmp
+*.temp
 *.old
 *.bak
+*.swp
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# VS Code workspace files
+.vscode/
+
+# PowerShell session files
+*.ps1xml
+*.psd1
+*.psm1
