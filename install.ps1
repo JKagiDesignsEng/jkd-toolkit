@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     JKD-Toolkit Web Installer
@@ -24,7 +24,7 @@
     
 .NOTES
     Author: JKagiDesigns LLC
-    Requires: PowerShell 5.1+, Administrator privileges
+    Requires: PowerShell 5.1+, Will auto-elevate to Administrator privileges
 #>
 
 [CmdletBinding()]
@@ -70,6 +70,72 @@ function Test-AdminRights {
     $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Request-AdminElevation {
+    param(
+        [string]$InstallPath,
+        [switch]$AutoLaunch,
+        [switch]$Force
+    )
+    
+    try {
+        Write-ColorOutput "⚡ Requesting administrator privileges..." "Warning"
+        
+        # Build arguments to pass to elevated process
+        $argList = @()
+        $argList += "-NoProfile"
+        $argList += "-ExecutionPolicy Bypass"
+        $argList += "-Command"
+        
+        # Re-download and execute the script with parameters
+        $commandParts = @()
+        $commandParts += "irm 'https://raw.githubusercontent.com/$RepoOwner/$RepoName/$Branch/install.ps1'"
+        
+        # Build parameter string
+        $paramString = ""
+        if ($InstallPath -ne "C:\Tools\JKD-Toolkit") {
+            $paramString += " -InstallPath '$InstallPath'"
+        }
+        if ($AutoLaunch) {
+            $paramString += " -AutoLaunch"
+        }
+        if ($Force) {
+            $paramString += " -Force"
+        }
+        
+        $commandParts += "| iex$paramString"
+        $fullCommand = $commandParts -join " "
+        $argList += $fullCommand
+        
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "powershell.exe"
+        $psi.Arguments = $argList -join " "
+        $psi.Verb = "runas"
+        $psi.WindowStyle = "Normal"
+        
+        $process = [System.Diagnostics.Process]::Start($psi)
+        
+        if ($process) {
+            Write-ColorOutput "✓ Elevated process started successfully" "Success"
+            Write-ColorOutput "Installation will continue in the new administrator window..." "Info"
+            exit 0
+        }
+        else {
+            Write-ColorOutput "❌ Failed to start elevated process" "Error"
+            return $false
+        }
+    }
+    catch {
+        if ($_.Exception.Message -match "The operation was canceled by the user") {
+            Write-ColorOutput "❌ User declined administrator privileges" "Error"
+            Write-ColorOutput "Administrator rights are required to install system-wide tools." "Info"
+        }
+        else {
+            Write-ColorOutput "❌ Failed to elevate: $($_.Exception.Message)" "Error"
+        }
+        return $false
+    }
 }
 
 function Test-InternetConnection {
@@ -169,9 +235,9 @@ function Install-JKDToolkit {
     Write-ColorOutput "Checking prerequisites..." "Info"
     
     if (-not (Test-AdminRights)) {
-        Write-ColorOutput "❌ Administrator privileges required!" "Error"
-        Write-ColorOutput "Please run PowerShell as Administrator and try again." "Error"
-        exit 1
+        Write-ColorOutput "⚡ Administrator privileges required - requesting elevation..." "Warning"
+        Request-AdminElevation -InstallPath $InstallPath -AutoLaunch:$AutoLaunch -Force:$Force
+        return # Exit current process, elevated process will continue
     }
     Write-ColorOutput "✓ Administrator privileges confirmed" "Success"
     

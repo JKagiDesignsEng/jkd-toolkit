@@ -97,10 +97,13 @@ irm "https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/main/install.
 ```
 
 **What this does:**
+- **Automatically elevates** to administrator privileges if needed
 - Downloads and installs the complete toolkit to `C:\Tools\JKD-Toolkit`
 - Creates a desktop shortcut for easy access
 - Adds the toolkit to your system PATH
 - Automatically handles all dependencies
+
+**No Admin Required to Start:** Just run the command from any PowerShell window - it will request elevation automatically!
 
 **Custom Installation Options:**
 ```powershell
@@ -172,6 +175,7 @@ The web installer (`install.ps1`) provides a seamless installation experience si
 
 ### Key Features
 - **One-Line Installation**: Simple `irm | iex` command for instant setup
+- **Auto-Elevation**: Automatically requests administrator privileges if needed
 - **Automatic Prerequisites**: Checks for admin rights and internet connectivity
 - **Smart Downloading**: Fetches latest files from GitHub repository
 - **Desktop Integration**: Creates shortcuts and adds to system PATH
@@ -195,13 +199,14 @@ To host your own version of the installer:
 
 ### Installation Process
 The web installer performs these steps:
-1. Validates administrator privileges
-2. Checks internet connectivity
-3. Creates installation directory (`C:\Tools\JKD-Toolkit` by default)
-4. Downloads all required files from GitHub
-5. Creates desktop shortcut with proper icon
-6. Adds toolkit to system PATH for global access
-7. Optionally launches the toolkit immediately
+1. **Auto-elevates to administrator** if not already running as admin
+2. Validates administrator privileges
+3. Checks internet connectivity
+4. Creates installation directory (`C:\Tools\JKD-Toolkit` by default)
+5. Downloads all required files from GitHub
+6. Creates desktop shortcut with proper icon
+7. Adds toolkit to system PATH for global access
+8. Optionally launches the toolkit immediately
 
 ### Auto-Update System 🔄
 The toolkit includes intelligent auto-update functionality:
