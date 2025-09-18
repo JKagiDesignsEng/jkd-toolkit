@@ -1005,8 +1005,8 @@ $btnSearchWU = New-Object System.Windows.Forms.Button; $btnSearchWU.Text='Window
 
 # Driver management controls
 $lblDriverMgmt = New-Object System.Windows.Forms.Label; $lblDriverMgmt.Text='Driver Management:'; $lblDriverMgmt.Location=New-Object System.Drawing.Point(10,80); $lblDriverMgmt.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblDriverMgmt.Size=New-Object System.Drawing.Size(150,20)
-$btnInstallSelected = New-Object System.Windows.Forms.Button; $btnInstallSelected.Text='Install Selected'; $btnInstallSelected.Size=New-Object System.Drawing.Size(120,30); $btnInstallSelected.Location=New-Object System.Drawing.Point(10,100); $btnInstallSelected.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnInstallSelected.Enabled=$false
-$btnDownloadSelected = New-Object System.Windows.Forms.Button; $btnDownloadSelected.Text='Download Only'; $btnDownloadSelected.Size=New-Object System.Drawing.Size(110,30); $btnDownloadSelected.Location=New-Object System.Drawing.Point(140,100); $btnDownloadSelected.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnDownloadSelected.Enabled=$false
+$btnInstallDrivers = New-Object System.Windows.Forms.Button; $btnInstallDrivers.Text='Install Selected'; $btnInstallDrivers.Size=New-Object System.Drawing.Size(120,30); $btnInstallDrivers.Location=New-Object System.Drawing.Point(10,100); $btnInstallDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnInstallDrivers.Enabled=$false
+$btnDownloadDrivers = New-Object System.Windows.Forms.Button; $btnDownloadDrivers.Text='Download Only'; $btnDownloadDrivers.Size=New-Object System.Drawing.Size(110,30); $btnDownloadDrivers.Location=New-Object System.Drawing.Point(140,100); $btnDownloadDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnDownloadDrivers.Enabled=$false
 $btnBackupDrivers = New-Object System.Windows.Forms.Button; $btnBackupDrivers.Text='Backup Drivers'; $btnBackupDrivers.Size=New-Object System.Drawing.Size(110,30); $btnBackupDrivers.Location=New-Object System.Drawing.Point(260,100); $btnBackupDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
 $btnRestoreDrivers = New-Object System.Windows.Forms.Button; $btnRestoreDrivers.Text='Restore Drivers'; $btnRestoreDrivers.Size=New-Object System.Drawing.Size(110,30); $btnRestoreDrivers.Location=New-Object System.Drawing.Point(380,100); $btnRestoreDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
 
@@ -1058,7 +1058,7 @@ $panelDriversTop.Height = 150
 $panelDriversTop.Padding = New-Object System.Windows.Forms.Padding(6)
 $panelDriversTop.Margin = New-Object System.Windows.Forms.Padding(0)
 
-$panelDriversTop.Controls.AddRange(@($lblDriverScan,$btnScanDrivers,$btnScanMissing,$btnScanOutdated,$lblDriverSearch,$btnSearchOnline,$btnSearchWU,$lblDriverMgmt,$btnInstallSelected,$btnDownloadSelected,$btnBackupDrivers,$btnRestoreDrivers,$lblDriverStatus,$progressDrivers))
+$panelDriversTop.Controls.AddRange(@($lblDriverScan,$btnScanDrivers,$btnScanMissing,$btnScanOutdated,$lblDriverSearch,$btnSearchOnline,$btnSearchWU,$lblDriverMgmt,$btnInstallDrivers,$btnDownloadDrivers,$btnBackupDrivers,$btnRestoreDrivers,$lblDriverStatus,$progressDrivers))
 
 $tblDrivers = New-Object System.Windows.Forms.TableLayoutPanel
 $tblDrivers.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -1219,8 +1219,8 @@ $btnSearchWU.Add_Click({
     }
 })
 
-$tooltip.SetToolTip($btnInstallSelected, 'Install selected drivers')
-$btnInstallSelected.Add_Click({
+$tooltip.SetToolTip($btnInstallDrivers, 'Install selected drivers')
+$btnInstallDrivers.Add_Click({
     $selectedDrivers = Get-SelectedDrivers
     if ($selectedDrivers.Count -eq 0) {
         Show-ToolkitToast 'Please select drivers to install' -Type 'Warning'
@@ -1283,8 +1283,8 @@ $btnInstallSelected.Add_Click({
     }
 })
 
-$tooltip.SetToolTip($btnDownloadSelected, 'Download selected drivers without installing')
-$btnDownloadSelected.Add_Click({
+$tooltip.SetToolTip($btnDownloadDrivers, 'Download selected drivers without installing')
+$btnDownloadDrivers.Add_Click({
     $selectedDrivers = Get-SelectedDrivers
     if ($selectedDrivers.Count -eq 0) {
         Show-ToolkitToast 'Please select drivers to download' -Type 'Warning'
@@ -1502,15 +1502,15 @@ function Get-SelectedDrivers {
 
 function Update-DriverButtonStates {
     $selectedCount = (Get-SelectedDrivers).Count
-    $btnInstallSelected.Enabled = $selectedCount -gt 0
-    $btnDownloadSelected.Enabled = $selectedCount -gt 0
+    $btnInstallDrivers.Enabled = $selectedCount -gt 0
+    $btnDownloadDrivers.Enabled = $selectedCount -gt 0
     
     if ($selectedCount -gt 0) {
-        $btnInstallSelected.Text = "Install Selected ($selectedCount)"
-        $btnDownloadSelected.Text = "Download Selected ($selectedCount)"
+        $btnInstallDrivers.Text = "Install Selected ($selectedCount)"
+        $btnDownloadDrivers.Text = "Download Selected ($selectedCount)"
     } else {
-        $btnInstallSelected.Text = "Install Selected"
-        $btnDownloadSelected.Text = "Download Only"
+        $btnInstallDrivers.Text = "Install Selected"
+        $btnDownloadDrivers.Text = "Download Only"
     }
 }
 
