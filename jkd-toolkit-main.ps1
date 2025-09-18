@@ -987,6 +987,533 @@ $btnClearSelection.Add_Click({
 
 $tooltip.SetToolTip($gridApps, 'Select packages/applications from the list, then use Install Selected or Uninstall Selected buttons')
 
+# --- Driver Management Tab ---
+$tabDrivers = New-Object System.Windows.Forms.TabPage
+$tabDrivers.Text = "Driver Management"
+$tabs.TabPages.Add($tabDrivers) | Out-Null
+
+# Driver scan controls
+$lblDriverScan = New-Object System.Windows.Forms.Label; $lblDriverScan.Text='Driver Detection:'; $lblDriverScan.Location=New-Object System.Drawing.Point(10,10); $lblDriverScan.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblDriverScan.Size=New-Object System.Drawing.Size(130,20)
+$btnScanDrivers = New-Object System.Windows.Forms.Button; $btnScanDrivers.Text='Scan System'; $btnScanDrivers.Size=New-Object System.Drawing.Size(100,30); $btnScanDrivers.Location=New-Object System.Drawing.Point(10,30); $btnScanDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+$btnScanMissing = New-Object System.Windows.Forms.Button; $btnScanMissing.Text='Find Missing'; $btnScanMissing.Size=New-Object System.Drawing.Size(100,30); $btnScanMissing.Location=New-Object System.Drawing.Point(120,30); $btnScanMissing.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+$btnScanOutdated = New-Object System.Windows.Forms.Button; $btnScanOutdated.Text='Find Outdated'; $btnScanOutdated.Size=New-Object System.Drawing.Size(100,30); $btnScanOutdated.Location=New-Object System.Drawing.Point(230,30); $btnScanOutdated.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+
+# Driver search controls
+$lblDriverSearch = New-Object System.Windows.Forms.Label; $lblDriverSearch.Text='Driver Search:'; $lblDriverSearch.Location=New-Object System.Drawing.Point(360,10); $lblDriverSearch.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblDriverSearch.Size=New-Object System.Drawing.Size(120,20)
+$btnSearchOnline = New-Object System.Windows.Forms.Button; $btnSearchOnline.Text='Search Online'; $btnSearchOnline.Size=New-Object System.Drawing.Size(100,30); $btnSearchOnline.Location=New-Object System.Drawing.Point(360,30); $btnSearchOnline.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+$btnSearchWU = New-Object System.Windows.Forms.Button; $btnSearchWU.Text='Windows Update'; $btnSearchWU.Size=New-Object System.Drawing.Size(110,30); $btnSearchWU.Location=New-Object System.Drawing.Point(470,30); $btnSearchWU.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+
+# Driver management controls
+$lblDriverMgmt = New-Object System.Windows.Forms.Label; $lblDriverMgmt.Text='Driver Management:'; $lblDriverMgmt.Location=New-Object System.Drawing.Point(10,80); $lblDriverMgmt.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblDriverMgmt.Size=New-Object System.Drawing.Size(150,20)
+$btnInstallSelected = New-Object System.Windows.Forms.Button; $btnInstallSelected.Text='Install Selected'; $btnInstallSelected.Size=New-Object System.Drawing.Size(120,30); $btnInstallSelected.Location=New-Object System.Drawing.Point(10,100); $btnInstallSelected.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnInstallSelected.Enabled=$false
+$btnDownloadSelected = New-Object System.Windows.Forms.Button; $btnDownloadSelected.Text='Download Only'; $btnDownloadSelected.Size=New-Object System.Drawing.Size(110,30); $btnDownloadSelected.Location=New-Object System.Drawing.Point(140,100); $btnDownloadSelected.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnDownloadSelected.Enabled=$false
+$btnBackupDrivers = New-Object System.Windows.Forms.Button; $btnBackupDrivers.Text='Backup Drivers'; $btnBackupDrivers.Size=New-Object System.Drawing.Size(110,30); $btnBackupDrivers.Location=New-Object System.Drawing.Point(260,100); $btnBackupDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+$btnRestoreDrivers = New-Object System.Windows.Forms.Button; $btnRestoreDrivers.Text='Restore Drivers'; $btnRestoreDrivers.Size=New-Object System.Drawing.Size(110,30); $btnRestoreDrivers.Location=New-Object System.Drawing.Point(380,100); $btnRestoreDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+
+# Status and progress controls
+$lblDriverStatus = New-Object System.Windows.Forms.Label; $lblDriverStatus.Text='Status: Ready'; $lblDriverStatus.Location=New-Object System.Drawing.Point(500,80); $lblDriverStatus.Size=New-Object System.Drawing.Size(200,20); $lblDriverStatus.ForeColor=[System.Drawing.Color]::Blue
+$progressDrivers = New-Object System.Windows.Forms.ProgressBar; $progressDrivers.Location=New-Object System.Drawing.Point(500,100); $progressDrivers.Size=New-Object System.Drawing.Size(200,23); $progressDrivers.Style=[System.Windows.Forms.ProgressBarStyle]::Continuous; $progressDrivers.Visible=$false
+
+# Driver grid panel
+$panelDrivers = New-Object System.Windows.Forms.Panel
+$panelDrivers.Dock = [System.Windows.Forms.DockStyle]::Fill
+$panelDrivers.Padding = New-Object System.Windows.Forms.Padding(0)
+$panelDrivers.Margin = New-Object System.Windows.Forms.Padding(0)
+
+$panelDriversInner = New-Object System.Windows.Forms.Panel
+$panelDriversInner.Dock = [System.Windows.Forms.DockStyle]::Fill
+$panelDriversInner.Padding = New-Object System.Windows.Forms.Padding(10)
+$panelDriversInner.Margin = New-Object System.Windows.Forms.Padding(0)
+
+# Driver grid
+$gridDrivers = New-Object System.Windows.Forms.DataGridView
+$gridDrivers.Dock = [System.Windows.Forms.DockStyle]::Fill
+$gridDrivers.ReadOnly = $true
+$gridDrivers.AutoSizeColumnsMode = 'Fill'
+$gridDrivers.RowHeadersVisible = $false
+$gridDrivers.AllowUserToAddRows = $false
+$gridDrivers.SelectionMode = 'FullRowSelect'
+$gridDrivers.MultiSelect = $true
+$gridDrivers.BackgroundColor = [System.Drawing.Color]::White
+$gridDrivers.BorderStyle = 'Fixed3D'
+$gridDrivers.ScrollBars = 'Both'
+$gridDrivers.AutoSizeRowsMode = 'None'
+$gridDrivers.ColumnHeadersHeightSizeMode = 'AutoSize'
+
+# Add checkbox column for selection
+$checkColumn = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+$checkColumn.HeaderText = "Select"
+$checkColumn.Name = "Select"
+$checkColumn.Width = 50
+$checkColumn.ReadOnly = $false
+$gridDrivers.Columns.Add($checkColumn) | Out-Null
+
+$panelDriversInner.Controls.Add($gridDrivers)
+$panelDrivers.Controls.Add($panelDriversInner)
+
+# Driver tab layout
+$panelDriversTop = New-Object System.Windows.Forms.Panel
+$panelDriversTop.Dock = [System.Windows.Forms.DockStyle]::Top
+$panelDriversTop.Height = 150
+$panelDriversTop.Padding = New-Object System.Windows.Forms.Padding(6)
+$panelDriversTop.Margin = New-Object System.Windows.Forms.Padding(0)
+
+$panelDriversTop.Controls.AddRange(@($lblDriverScan,$btnScanDrivers,$btnScanMissing,$btnScanOutdated,$lblDriverSearch,$btnSearchOnline,$btnSearchWU,$lblDriverMgmt,$btnInstallSelected,$btnDownloadSelected,$btnBackupDrivers,$btnRestoreDrivers,$lblDriverStatus,$progressDrivers))
+
+$tblDrivers = New-Object System.Windows.Forms.TableLayoutPanel
+$tblDrivers.Dock = [System.Windows.Forms.DockStyle]::Fill
+$tblDrivers.RowCount = 2
+$tblDrivers.ColumnCount = 1
+$tblDrivers.AutoSize = $false
+$tblDrivers.Margin = New-Object System.Windows.Forms.Padding(0)
+$null = $tblDrivers.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+$null = $tblDrivers.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent,100)))
+$tblDrivers.Controls.Add($panelDriversTop,0,0)
+$tblDrivers.Controls.Add($panelDrivers,0,1)
+$tabDrivers.Controls.Add($tblDrivers)
+
+# Global driver variables
+$global:DriverScanResults = @()
+$global:SelectedDrivers = @()
+
+# Driver event handlers
+$tooltip.SetToolTip($btnScanDrivers, 'Scan all hardware devices and their current driver status')
+$btnScanDrivers.Add_Click({
+    Set-Status 'Scanning system drivers...'
+    $lblDriverStatus.Text = 'Status: Scanning system...'
+    $progressDrivers.Visible = $true
+    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+    
+    try {
+        $global:DriverScanResults = Get-SystemDriverInfo
+        Update-DriverGrid -Drivers $global:DriverScanResults
+        $lblDriverStatus.Text = "Status: Found $($global:DriverScanResults.Count) devices"
+        Set-Status "System scan complete - found $($global:DriverScanResults.Count) devices"
+    }
+    catch {
+        $lblDriverStatus.Text = 'Status: Scan failed'
+        Set-Status "Driver scan failed: $($_.Exception.Message)"
+        Show-ToolkitToast "Driver scan failed: $($_.Exception.Message)" -Type 'Error'
+    }
+    finally {
+        $progressDrivers.Visible = $false
+    }
+})
+
+$tooltip.SetToolTip($btnScanMissing, 'Find devices with missing or unknown drivers')
+$btnScanMissing.Add_Click({
+    Set-Status 'Scanning for missing drivers...'
+    $lblDriverStatus.Text = 'Status: Finding missing drivers...'
+    $progressDrivers.Visible = $true
+    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+    
+    try {
+        $allDrivers = Get-SystemDriverInfo
+        $missingDrivers = $allDrivers | Where-Object { $_.Status -eq 'Missing' -or $_.Status -eq 'Unknown Device' }
+        $global:DriverScanResults = $missingDrivers
+        Update-DriverGrid -Drivers $missingDrivers
+        $lblDriverStatus.Text = "Status: Found $($missingDrivers.Count) missing drivers"
+        Set-Status "Missing driver scan complete - found $($missingDrivers.Count) missing drivers"
+    }
+    catch {
+        $lblDriverStatus.Text = 'Status: Scan failed'
+        Set-Status "Missing driver scan failed: $($_.Exception.Message)"
+        Show-ToolkitToast "Missing driver scan failed: $($_.Exception.Message)" -Type 'Error'
+    }
+    finally {
+        $progressDrivers.Visible = $false
+    }
+})
+
+$tooltip.SetToolTip($btnScanOutdated, 'Find devices with outdated drivers available online')
+$btnScanOutdated.Add_Click({
+    Set-Status 'Scanning for outdated drivers...'
+    $lblDriverStatus.Text = 'Status: Checking for driver updates...'
+    $progressDrivers.Visible = $true
+    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+    
+    try {
+        $result = Start-AdvancedDriverScan -ScanType 'Outdated'
+        $global:DriverScanResults = $result.OutdatedDrivers
+        Update-DriverGrid -Drivers $result.OutdatedDrivers
+        $lblDriverStatus.Text = "Status: Found $($result.OutdatedDrivers.Count) outdated drivers"
+        Set-Status "Outdated driver scan complete - found $($result.OutdatedDrivers.Count) outdated drivers"
+    }
+    catch {
+        $lblDriverStatus.Text = 'Status: Scan failed'
+        Set-Status "Outdated driver scan failed: $($_.Exception.Message)"
+        Show-ToolkitToast "Outdated driver scan failed: $($_.Exception.Message)" -Type 'Error'
+    }
+    finally {
+        $progressDrivers.Visible = $false
+    }
+})
+
+$tooltip.SetToolTip($btnSearchOnline, 'Search online for drivers for selected devices')
+$btnSearchOnline.Add_Click({
+    $selectedDevices = Get-SelectedDrivers
+    if ($selectedDevices.Count -eq 0) {
+        Show-ToolkitToast 'Please select devices to search for drivers' -Type 'Warning'
+        return
+    }
+    
+    Set-Status 'Searching online for drivers...'
+    $lblDriverStatus.Text = 'Status: Searching online...'
+    $progressDrivers.Visible = $true
+    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+    
+    try {
+        $foundDrivers = @()
+        foreach ($device in $selectedDevices) {
+            $drivers = Search-OnlineDrivers -HardwareID $device.HardwareID -DeviceName $device.DeviceName
+            $foundDrivers += $drivers
+        }
+        
+        $global:DriverScanResults = $foundDrivers
+        Update-DriverGrid -Drivers $foundDrivers
+        $lblDriverStatus.Text = "Status: Found $($foundDrivers.Count) online drivers"
+        Set-Status "Online search complete - found $($foundDrivers.Count) drivers"
+    }
+    catch {
+        $lblDriverStatus.Text = 'Status: Search failed'
+        Set-Status "Online driver search failed: $($_.Exception.Message)"
+        Show-ToolkitToast "Online driver search failed: $($_.Exception.Message)" -Type 'Error'
+    }
+    finally {
+        $progressDrivers.Visible = $false
+    }
+})
+
+$tooltip.SetToolTip($btnSearchWU, 'Search Windows Update for drivers for selected devices')
+$btnSearchWU.Add_Click({
+    $selectedDevices = Get-SelectedDrivers
+    if ($selectedDevices.Count -eq 0) {
+        Show-ToolkitToast 'Please select devices to search for drivers' -Type 'Warning'
+        return
+    }
+    
+    Set-Status 'Searching Windows Update for drivers...'
+    $lblDriverStatus.Text = 'Status: Searching Windows Update...'
+    $progressDrivers.Visible = $true
+    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+    
+    try {
+        $foundDrivers = @()
+        foreach ($device in $selectedDevices) {
+            $drivers = Search-WindowsUpdateDrivers -HardwareID $device.HardwareID
+            $foundDrivers += $drivers
+        }
+        
+        $global:DriverScanResults = $foundDrivers
+        Update-DriverGrid -Drivers $foundDrivers
+        $lblDriverStatus.Text = "Status: Found $($foundDrivers.Count) Windows Update drivers"
+        Set-Status "Windows Update search complete - found $($foundDrivers.Count) drivers"
+    }
+    catch {
+        $lblDriverStatus.Text = 'Status: Search failed'
+        Set-Status "Windows Update driver search failed: $($_.Exception.Message)"
+        Show-ToolkitToast "Windows Update driver search failed: $($_.Exception.Message)" -Type 'Error'
+    }
+    finally {
+        $progressDrivers.Visible = $false
+    }
+})
+
+$tooltip.SetToolTip($btnInstallSelected, 'Install selected drivers')
+$btnInstallSelected.Add_Click({
+    $selectedDrivers = Get-SelectedDrivers
+    if ($selectedDrivers.Count -eq 0) {
+        Show-ToolkitToast 'Please select drivers to install' -Type 'Warning'
+        return
+    }
+    
+    $result = [System.Windows.Forms.MessageBox]::Show(
+        "Install $($selectedDrivers.Count) selected driver(s)?`n`nThis action requires administrator privileges and may require a restart.",
+        'Confirm Driver Installation',
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Question
+    )
+    
+    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+        Set-Status 'Installing selected drivers...'
+        $lblDriverStatus.Text = 'Status: Installing drivers...'
+        $progressDrivers.Visible = $true
+        $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
+        $progressDrivers.Value = 0
+        $progressDrivers.Maximum = $selectedDrivers.Count
+        
+        try {
+            $installResult = Install-SelectedDrivers -Drivers $selectedDrivers -ShowProgress {
+                param($Current, $Total, $DriverName)
+                $progressDrivers.Value = $Current
+                $lblDriverStatus.Text = "Status: Installing $DriverName ($Current/$Total)"
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+            
+            $lblDriverStatus.Text = "Status: Installation complete - $($installResult.Successful) successful, $($installResult.Failed) failed"
+            Set-Status "Driver installation complete - $($installResult.Successful) successful, $($installResult.Failed) failed"
+            
+            if ($installResult.Failed -gt 0) {
+                Show-ToolkitToast "Driver installation completed with $($installResult.Failed) failures. Check logs for details." -Type 'Warning'
+            } else {
+                Show-ToolkitToast "All drivers installed successfully!" -Type 'Success'
+            }
+            
+            if ($installResult.RequiresRestart) {
+                $restartResult = [System.Windows.Forms.MessageBox]::Show(
+                    'Some drivers require a restart to take effect. Restart now?',
+                    'Restart Required',
+                    [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                    [System.Windows.Forms.MessageBoxIcon]::Question
+                )
+                
+                if ($restartResult -eq [System.Windows.Forms.DialogResult]::Yes) {
+                    Start-Process 'shutdown' -ArgumentList '/r /t 30 /c "Restarting for driver installation"' -NoNewWindow
+                }
+            }
+        }
+        catch {
+            $lblDriverStatus.Text = 'Status: Installation failed'
+            Set-Status "Driver installation failed: $($_.Exception.Message)"
+            Show-ToolkitToast "Driver installation failed: $($_.Exception.Message)" -Type 'Error'
+        }
+        finally {
+            $progressDrivers.Visible = $false
+        }
+    }
+})
+
+$tooltip.SetToolTip($btnDownloadSelected, 'Download selected drivers without installing')
+$btnDownloadSelected.Add_Click({
+    $selectedDrivers = Get-SelectedDrivers
+    if ($selectedDrivers.Count -eq 0) {
+        Show-ToolkitToast 'Please select drivers to download' -Type 'Warning'
+        return
+    }
+    
+    # Show folder browser for download location
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderBrowser.Description = 'Select download location for drivers'
+    $folderBrowser.SelectedPath = [Environment]::GetFolderPath('Desktop')
+    
+    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        Set-Status 'Downloading selected drivers...'
+        $lblDriverStatus.Text = 'Status: Downloading drivers...'
+        $progressDrivers.Visible = $true
+        $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
+        $progressDrivers.Value = 0
+        $progressDrivers.Maximum = $selectedDrivers.Count
+        
+        try {
+            $downloadPath = $folderBrowser.SelectedPath
+            $downloadedCount = 0
+            
+            foreach ($driver in $selectedDrivers) {
+                try {
+                    $downloadedCount++
+                    $progressDrivers.Value = $downloadedCount
+                    $lblDriverStatus.Text = "Status: Downloading $($driver.DriverName) ($downloadedCount/$($selectedDrivers.Count))"
+                    [System.Windows.Forms.Application]::DoEvents()
+                    
+                    # Download driver (implementation depends on driver source)
+                    if ($driver.DownloadURL) {
+                        $fileName = [System.IO.Path]::GetFileName($driver.DownloadURL)
+                        $filePath = Join-Path $downloadPath $fileName
+                        Invoke-WebRequest -Uri $driver.DownloadURL -OutFile $filePath -UseBasicParsing
+                    }
+                }
+                catch {
+                    Write-Log "Failed to download driver $($driver.DriverName): $($_.Exception.Message)"
+                }
+            }
+            
+            $lblDriverStatus.Text = "Status: Downloaded $downloadedCount drivers to $downloadPath"
+            Set-Status "Driver download complete - $downloadedCount files downloaded"
+            Show-ToolkitToast "Drivers downloaded successfully to $downloadPath" -Type 'Success'
+        }
+        catch {
+            $lblDriverStatus.Text = 'Status: Download failed'
+            Set-Status "Driver download failed: $($_.Exception.Message)"
+            Show-ToolkitToast "Driver download failed: $($_.Exception.Message)" -Type 'Error'
+        }
+        finally {
+            $progressDrivers.Visible = $false
+        }
+    }
+})
+
+$tooltip.SetToolTip($btnBackupDrivers, 'Backup all installed drivers to a folder')
+$btnBackupDrivers.Add_Click({
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderBrowser.Description = 'Select backup location for drivers'
+    $folderBrowser.SelectedPath = [Environment]::GetFolderPath('Desktop')
+    
+    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        Set-Status 'Backing up drivers...'
+        $lblDriverStatus.Text = 'Status: Backing up drivers...'
+        $progressDrivers.Visible = $true
+        $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+        
+        try {
+            $backupPath = $folderBrowser.SelectedPath
+            $result = Backup-CurrentDrivers -BackupPath $backupPath
+            
+            $lblDriverStatus.Text = "Status: Backup complete - $($result.BackedUpCount) drivers backed up"
+            Set-Status "Driver backup complete - $($result.BackedUpCount) drivers backed up to $backupPath"
+            Show-ToolkitToast "Drivers backed up successfully to $backupPath" -Type 'Success'
+        }
+        catch {
+            $lblDriverStatus.Text = 'Status: Backup failed'
+            Set-Status "Driver backup failed: $($_.Exception.Message)"
+            Show-ToolkitToast "Driver backup failed: $($_.Exception.Message)" -Type 'Error'
+        }
+        finally {
+            $progressDrivers.Visible = $false
+        }
+    }
+})
+
+$tooltip.SetToolTip($btnRestoreDrivers, 'Restore drivers from a backup folder')
+$btnRestoreDrivers.Add_Click({
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderBrowser.Description = 'Select driver backup folder to restore from'
+    $folderBrowser.SelectedPath = [Environment]::GetFolderPath('Desktop')
+    
+    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $restorePath = $folderBrowser.SelectedPath
+        
+        $result = [System.Windows.Forms.MessageBox]::Show(
+            "Restore drivers from $restorePath?`n`nThis will install all driver packages found in the selected folder.",
+            'Confirm Driver Restore',
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question
+        )
+        
+        if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+            Set-Status 'Restoring drivers...'
+            $lblDriverStatus.Text = 'Status: Restoring drivers...'
+            $progressDrivers.Visible = $true
+            $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+            
+            try {
+                # Find all .inf files in the restore path
+                $infFiles = Get-ChildItem -Path $restorePath -Filter "*.inf" -Recurse
+                $restoredCount = 0
+                
+                foreach ($infFile in $infFiles) {
+                    try {
+                        Start-Process 'pnputil' -ArgumentList "/add-driver `"$($infFile.FullName)`" /install" -Wait -NoNewWindow
+                        $restoredCount++
+                        $lblDriverStatus.Text = "Status: Restored $restoredCount/$($infFiles.Count) drivers"
+                        [System.Windows.Forms.Application]::DoEvents()
+                    }
+                    catch {
+                        Write-Log "Failed to restore driver $($infFile.Name): $($_.Exception.Message)"
+                    }
+                }
+                
+                $lblDriverStatus.Text = "Status: Restore complete - $restoredCount drivers restored"
+                Set-Status "Driver restore complete - $restoredCount drivers restored"
+                Show-ToolkitToast "Drivers restored successfully - $restoredCount drivers installed" -Type 'Success'
+            }
+            catch {
+                $lblDriverStatus.Text = 'Status: Restore failed'
+                Set-Status "Driver restore failed: $($_.Exception.Message)"
+                Show-ToolkitToast "Driver restore failed: $($_.Exception.Message)" -Type 'Error'
+            }
+            finally {
+                $progressDrivers.Visible = $false
+            }
+        }
+    }
+})
+
+# Grid selection event handlers
+$gridDrivers.CellContentClick.Add({
+    param($sender, $e)
+    if ($e.ColumnIndex -eq 0 -and $e.RowIndex -ge 0) {  # Checkbox column
+        $sender.CommitEdit([System.Windows.Forms.DataGridViewDataErrorContexts]::Commit)
+        Update-DriverButtonStates
+    }
+})
+
+$gridDrivers.SelectionChanged.Add({
+    Update-DriverButtonStates
+})
+
+# Helper functions for driver management
+function Update-DriverGrid {
+    param([array]$Drivers)
+    
+    $gridDrivers.DataSource = $null
+    $gridDrivers.Rows.Clear()
+    
+    if ($Drivers -and $Drivers.Count -gt 0) {
+        # Create data table
+        $dataTable = New-Object System.Data.DataTable
+        $null = $dataTable.Columns.Add("Select", [System.Boolean])
+        $null = $dataTable.Columns.Add("Device Name", [System.String])
+        $null = $dataTable.Columns.Add("Status", [System.String])
+        $null = $dataTable.Columns.Add("Current Driver", [System.String])
+        $null = $dataTable.Columns.Add("Available Driver", [System.String])
+        $null = $dataTable.Columns.Add("Date", [System.String])
+        $null = $dataTable.Columns.Add("Hardware ID", [System.String])
+        
+        foreach ($driver in $Drivers) {
+            $row = $dataTable.NewRow()
+            $row["Select"] = $false
+            $row["Device Name"] = $driver.DeviceName
+            $row["Status"] = $driver.Status
+            $row["Current Driver"] = $driver.CurrentVersion
+            $row["Available Driver"] = $driver.AvailableVersion
+            $row["Date"] = $driver.DriverDate
+            $row["Hardware ID"] = $driver.HardwareID
+            $dataTable.Rows.Add($row)
+        }
+        
+        $gridDrivers.DataSource = $dataTable
+        
+        # Adjust column widths
+        $gridDrivers.Columns["Select"].Width = 50
+        $gridDrivers.Columns["Device Name"].Width = 200
+        $gridDrivers.Columns["Status"].Width = 100
+        $gridDrivers.Columns["Current Driver"].Width = 120
+        $gridDrivers.Columns["Available Driver"].Width = 120
+        $gridDrivers.Columns["Date"].Width = 100
+        $gridDrivers.Columns["Hardware ID"].Width = 150
+    }
+    
+    Update-DriverButtonStates
+}
+
+function Get-SelectedDrivers {
+    $selectedDrivers = @()
+    
+    if ($gridDrivers.DataSource) {
+        for ($i = 0; $i -lt $gridDrivers.Rows.Count; $i++) {
+            if ($gridDrivers.Rows[$i].Cells["Select"].Value -eq $true) {
+                $selectedDrivers += $global:DriverScanResults[$i]
+            }
+        }
+    }
+    
+    return $selectedDrivers
+}
+
+function Update-DriverButtonStates {
+    $selectedCount = (Get-SelectedDrivers).Count
+    $btnInstallSelected.Enabled = $selectedCount -gt 0
+    $btnDownloadSelected.Enabled = $selectedCount -gt 0
+    
+    if ($selectedCount -gt 0) {
+        $btnInstallSelected.Text = "Install Selected ($selectedCount)"
+        $btnDownloadSelected.Text = "Download Selected ($selectedCount)"
+    } else {
+        $btnInstallSelected.Text = "Install Selected"
+        $btnDownloadSelected.Text = "Download Only"
+    }
+}
+
 # --- Tools Tab ---
 $tabTools = New-Object System.Windows.Forms.TabPage
 $tabTools.Text = "Tools & Shortcuts"

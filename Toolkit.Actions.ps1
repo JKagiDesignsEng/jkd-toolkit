@@ -1239,3 +1239,672 @@ Would you like to:
 }
 #endregion
 
+#region ----- Advanced Driver Management -----
+
+# Driver detection and analysis functions
+function Get-SystemDriverInfo {
+  Write-Log "Collecting comprehensive driver information..."
+  
+  $driverInfo = @{
+    PnPDevices = @()
+    SystemDrivers = @()
+    MissingDrivers = @()
+    OutdatedDrivers = @()
+    InstalledDrivers = @()
+  }
+  
+  try {
+    # Get all PnP devices
+    Write-Log "Scanning PnP devices..."
+    $allDevices = Get-CimInstance -ClassName Win32_PnPEntity
+    
+    foreach ($device in $allDevices) {
+      $deviceInfo = [PSCustomObject]@{
+        Name = $device.Name
+        DeviceID = $device.DeviceID
+        HardwareID = $device.HardwareID
+        CompatibleID = $device.CompatibleID
+        Manufacturer = $device.Manufacturer
+        Service = $device.Service
+        Status = $device.Status
+        ConfigManagerErrorCode = $device.ConfigManagerErrorCode
+        ErrorDescription = Get-DeviceErrorDescription -ErrorCode $device.ConfigManagerErrorCode
+        DriverDate = $null
+        DriverVersion = $null
+        DriverProvider = $null
+        DeviceClass = $device.PNPClass
+        IsNetworkDevice = $device.Name -match "Network|Ethernet|Wi-Fi|Wireless|Adapter|NIC"
+        IsGraphicsDevice = $device.Name -match "Display|Graphics|Video|VGA|GPU"
+        IsAudioDevice = $device.Name -match "Audio|Sound|Speaker|Microphone"
+        IsStorageDevice = $device.Name -match "Disk|Storage|IDE|SATA|NVMe|SSD"
+        NeedsDriver = $device.ConfigManagerErrorCode -in @(28, 31, 37, 39, 43) -or 
+                     $device.Name -like "*Unknown*" -or 
+                     $device.Manufacturer -like "*Unknown*"
+      }
+      
+      # Try to get driver information
+      try {
+        $driverQuery = "SELECT * FROM Win32_SystemDriver WHERE Name LIKE '%$($device.Service)%'"
+        $driver = Get-CimInstance -Query $driverQuery -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($driver) {
+          $deviceInfo.DriverDate = $driver.StartMode
+          $deviceInfo.DriverVersion = $driver.Version
+          $deviceInfo.DriverProvider = $driver.Description
+        }
+      } catch {
+        # Driver info not available
+      }
+      
+      $driverInfo.PnPDevices += $deviceInfo
+      
+      if ($deviceInfo.NeedsDriver) {
+        $driverInfo.MissingDrivers += $deviceInfo
+      }
+    }
+    
+    # Get system drivers
+    Write-Log "Scanning system drivers..."
+    $systemDrivers = Get-CimInstance -ClassName Win32_SystemDriver
+    foreach ($driver in $systemDrivers) {
+      $driverInfo.SystemDrivers += [PSCustomObject]@{
+        Name = $driver.Name
+        Description = $driver.Description
+        PathName = $driver.PathName
+        ServiceType = $driver.ServiceType
+        StartMode = $driver.StartMode
+        State = $driver.State
+        Status = $driver.Status
+      }
+    }
+    
+    # Get installed drivers via PnPUtil
+    Write-Log "Scanning installed driver packages..."
+    try {
+      $pnpOutput = & pnputil /enum-drivers 2>$null
+      if ($pnpOutput) {
+        $currentDriver = $null
+        foreach ($line in $pnpOutput) {
+          if ($line -match "^Published Name\s*:\s*(.+)$") {
+            if ($currentDriver) {
+              $driverInfo.InstalledDrivers += $currentDriver
+            }
+            $currentDriver = [PSCustomObject]@{
+              PublishedName = $matches[1].Trim()
+              OriginalName = ""
+              ProviderName = ""
+              ClassName = ""
+              ClassGuid = ""
+              DriverVersion = ""
+              DriverDate = ""
+              SignerName = ""
+            }
+          }
+          elseif ($currentDriver) {
+            if ($line -match "^Original Name\s*:\s*(.+)$") {
+              $currentDriver.OriginalName = $matches[1].Trim()
+            }
+            elseif ($line -match "^Provider Name\s*:\s*(.+)$") {
+              $currentDriver.ProviderName = $matches[1].Trim()
+            }
+            elseif ($line -match "^Class Name\s*:\s*(.+)$") {
+              $currentDriver.ClassName = $matches[1].Trim()
+            }
+            elseif ($line -match "^Class GUID\s*:\s*(.+)$") {
+              $currentDriver.ClassGuid = $matches[1].Trim()
+            }
+            elseif ($line -match "^Driver Version\s*:\s*(.+)$") {
+              $currentDriver.DriverVersion = $matches[1].Trim()
+            }
+            elseif ($line -match "^Driver Date\s*:\s*(.+)$") {
+              $currentDriver.DriverDate = $matches[1].Trim()
+            }
+            elseif ($line -match "^Signer Name\s*:\s*(.+)$") {
+              $currentDriver.SignerName = $matches[1].Trim()
+            }
+          }
+        }
+        if ($currentDriver) {
+          $driverInfo.InstalledDrivers += $currentDriver
+        }
+      }
+    } catch {
+      Write-Log "Could not enumerate driver packages: $($_.Exception.Message)" 'WARN'
+    }
+    
+    Write-Log "Driver scan complete. Found $($driverInfo.PnPDevices.Count) devices, $($driverInfo.MissingDrivers.Count) missing drivers"
+    return $driverInfo
+    
+  } catch {
+    Write-Log "Error collecting driver information: $($_.Exception.Message)" 'ERROR'
+    throw
+  }
+}
+
+function Get-DeviceErrorDescription {
+  param([int]$ErrorCode)
+  
+  switch ($ErrorCode) {
+    0 { "Device is working properly" }
+    1 { "Device is not configured correctly" }
+    3 { "The driver for this device might be corrupted" }
+    9 { "Windows cannot identify this hardware" }
+    10 { "This device cannot start" }
+    12 { "This device cannot find enough free resources" }
+    14 { "This device cannot work properly until you restart" }
+    18 { "Reinstall the drivers for this device" }
+    19 { "Windows cannot start this hardware device" }
+    21 { "Windows is removing this device" }
+    22 { "This device is disabled" }
+    24 { "This device is not present, not working, or missing drivers" }
+    28 { "The drivers for this device are not installed" }
+    29 { "This device is disabled because firmware didn't provide resources" }
+    31 { "This device is not working properly" }
+    32 { "A driver for this device was not required and has been disabled" }
+    33 { "Windows cannot determine which resources this device requires" }
+    34 { "Windows cannot determine the settings for this device" }
+    35 { "Your computer's system firmware doesn't include enough information" }
+    36 { "This device is requesting a PCI interrupt but is configured for ISA" }
+    37 { "Windows cannot initialize the device driver for this hardware" }
+    38 { "Windows cannot load the device driver" }
+    39 { "Windows cannot load the device driver. The driver may be corrupted or missing" }
+    40 { "Windows cannot access this hardware" }
+    41 { "Windows successfully loaded the device driver but cannot find the hardware" }
+    42 { "Windows cannot load the device driver because there is a duplicate device" }
+    43 { "Windows has stopped this device because it has reported problems" }
+    44 { "An application or service has shut down this hardware device" }
+    45 { "Currently, this hardware device is not connected to the computer" }
+    46 { "Windows cannot gain access to this hardware device" }
+    47 { "Windows cannot use this hardware device because it has been prepared for safe removal" }
+    48 { "The software for this device has been blocked from starting" }
+    49 { "Windows cannot start new hardware devices" }
+    default { "Unknown error (Code: $ErrorCode)" }
+  }
+}
+
+function Search-OnlineDrivers {
+  param(
+    [Parameter(Mandatory)]
+    [PSCustomObject]$DeviceInfo,
+    [string]$DownloadPath = $null
+  )
+  
+  Write-Log "Searching for drivers for device: $($DeviceInfo.Name)"
+  
+  if (-not $DownloadPath) {
+    $DownloadPath = Join-Path $global:OutDir "Drivers"
+    New-Item -ItemType Directory -Path $DownloadPath -Force | Out-Null
+  }
+  
+  $searchResults = @()
+  
+  try {
+    # Extract hardware IDs for driver search
+    $hardwareIDs = @()
+    if ($DeviceInfo.HardwareID) {
+      $hardwareIDs += $DeviceInfo.HardwareID
+    }
+    if ($DeviceInfo.CompatibleID) {
+      $hardwareIDs += $DeviceInfo.CompatibleID
+    }
+    
+    foreach ($hwid in $hardwareIDs) {
+      if ([string]::IsNullOrEmpty($hwid)) { continue }
+      
+      # Parse vendor and device IDs
+      if ($hwid -match "VEN_([0-9A-F]{4}).*DEV_([0-9A-F]{4})") {
+        $vendorID = $matches[1]
+        $deviceID = $matches[2]
+        
+        Write-Log "Hardware ID: $hwid (Vendor: $vendorID, Device: $deviceID)"
+        
+        # Search Windows Update for drivers
+        $windowsUpdateResult = Search-WindowsUpdateDrivers -VendorID $vendorID -DeviceID $deviceID -DeviceName $DeviceInfo.Name
+        if ($windowsUpdateResult) {
+          $searchResults += $windowsUpdateResult
+        }
+        
+        # Check manufacturer databases
+        $manufacturerResult = Search-ManufacturerDrivers -VendorID $vendorID -DeviceID $deviceID -DeviceName $DeviceInfo.Name
+        if ($manufacturerResult) {
+          $searchResults += $manufacturerResult
+        }
+      }
+    }
+    
+    Write-Log "Found $($searchResults.Count) potential driver sources for $($DeviceInfo.Name)"
+    return $searchResults
+    
+  } catch {
+    Write-Log "Error searching for drivers: $($_.Exception.Message)" 'ERROR'
+    return @()
+  }
+}
+
+function Search-WindowsUpdateDrivers {
+  param(
+    [string]$VendorID,
+    [string]$DeviceID,
+    [string]$DeviceName
+  )
+  
+  try {
+    Write-Log "Searching Windows Update for drivers..."
+    
+    # Use Windows Update API to search for drivers
+    $updateSession = New-Object -ComObject Microsoft.Update.Session
+    $updateSearcher = $updateSession.CreateUpdateSearcher()
+    
+    # Search for driver updates
+    $searchResult = $updateSearcher.Search("IsInstalled=0 and Type='Driver'")
+    
+    $foundDrivers = @()
+    foreach ($update in $searchResult.Updates) {
+      if ($update.Title -match $DeviceName -or 
+          $update.Description -match $VendorID -or 
+          $update.Description -match $DeviceID) {
+        
+        $foundDrivers += [PSCustomObject]@{
+          Source = "Windows Update"
+          Title = $update.Title
+          Description = $update.Description
+          DownloadUrl = $null
+          Size = $update.MaxDownloadSize
+          UpdateID = $update.Identity.UpdateID
+          IsRecommended = $update.AutoSelection
+          CanDownload = $true
+          InstallMethod = "WindowsUpdate"
+        }
+      }
+    }
+    
+    Write-Log "Found $($foundDrivers.Count) drivers in Windows Update"
+    return $foundDrivers
+    
+  } catch {
+    Write-Log "Error searching Windows Update: $($_.Exception.Message)" 'WARN'
+    return @()
+  }
+}
+
+function Search-ManufacturerDrivers {
+  param(
+    [string]$VendorID,
+    [string]$DeviceID,
+    [string]$DeviceName
+  )
+  
+  $manufacturerInfo = Get-HardwareManufacturerInfo -VendorID $VendorID
+  
+  if ($manufacturerInfo) {
+    Write-Log "Device manufacturer: $($manufacturerInfo.Name)"
+    
+    return [PSCustomObject]@{
+      Source = "Manufacturer Website"
+      Title = "$($manufacturerInfo.Name) Driver for $DeviceName"
+      Description = "Visit manufacturer website for latest drivers"
+      DownloadUrl = $manufacturerInfo.DriverUrl
+      Size = 0
+      UpdateID = $null
+      IsRecommended = $true
+      CanDownload = $false
+      InstallMethod = "Manual"
+      ManufacturerName = $manufacturerInfo.Name
+      SupportUrl = $manufacturerInfo.SupportUrl
+    }
+  }
+  
+  return $null
+}
+
+function Get-HardwareManufacturerInfo {
+  param([string]$VendorID)
+  
+  # Common hardware vendor database
+  $vendors = @{
+    "8086" = @{ Name = "Intel Corporation"; DriverUrl = "https://www.intel.com/content/www/us/en/support/detect.html"; SupportUrl = "https://www.intel.com/content/www/us/en/support/" }
+    "10DE" = @{ Name = "NVIDIA Corporation"; DriverUrl = "https://www.nvidia.com/drivers/"; SupportUrl = "https://www.nvidia.com/support/" }
+    "1002" = @{ Name = "AMD/ATI"; DriverUrl = "https://www.amd.com/support"; SupportUrl = "https://www.amd.com/support" }
+    "1022" = @{ Name = "Advanced Micro Devices (AMD)"; DriverUrl = "https://www.amd.com/support"; SupportUrl = "https://www.amd.com/support" }
+    "14E4" = @{ Name = "Broadcom Corporation"; DriverUrl = "https://www.broadcom.com/support/"; SupportUrl = "https://www.broadcom.com/support/" }
+    "8087" = @{ Name = "Intel Corporation (Wireless)"; DriverUrl = "https://www.intel.com/content/www/us/en/support/articles/000005398/"; SupportUrl = "https://www.intel.com/content/www/us/en/support/" }
+    "10EC" = @{ Name = "Realtek Semiconductor"; DriverUrl = "https://www.realtek.com/downloads/"; SupportUrl = "https://www.realtek.com/support" }
+    "1039" = @{ Name = "Silicon Integrated Systems"; DriverUrl = ""; SupportUrl = "" }
+    "1106" = @{ Name = "VIA Technologies"; DriverUrl = "https://www.via.com.tw/en/support/"; SupportUrl = "https://www.via.com.tw/en/support/" }
+    "11AB" = @{ Name = "Marvell Technology Group"; DriverUrl = "https://www.marvell.com/support/"; SupportUrl = "https://www.marvell.com/support/" }
+  }
+  
+  if ($vendors.ContainsKey($VendorID.ToUpper())) {
+    return $vendors[$VendorID.ToUpper()]
+  }
+  
+  return $null
+}
+
+function Install-DriverPackage {
+  param(
+    [Parameter(Mandatory)]
+    [PSCustomObject]$DriverInfo,
+    [string]$DeviceInstanceID,
+    [switch]$Force
+  )
+  
+  Write-Log "Installing driver: $($DriverInfo.Title)"
+  
+  try {
+    switch ($DriverInfo.InstallMethod) {
+      "WindowsUpdate" {
+        return Install-WindowsUpdateDriver -UpdateID $DriverInfo.UpdateID -DeviceInstanceID $DeviceInstanceID
+      }
+      "PnPUtil" {
+        return Install-PnPDriver -DriverPath $DriverInfo.LocalPath -DeviceInstanceID $DeviceInstanceID -Force:$Force
+      }
+      "DevCon" {
+        return Install-DevConDriver -DriverPath $DriverInfo.LocalPath -DeviceInstanceID $DeviceInstanceID
+      }
+      "Manual" {
+        Show-ToolkitToast "Manual installation required. Please visit: $($DriverInfo.DownloadUrl)" "Manual Driver Installation"
+        if ($DriverInfo.DownloadUrl) {
+          Start-Process $DriverInfo.DownloadUrl
+        }
+        return $false
+      }
+      default {
+        Write-Log "Unknown installation method: $($DriverInfo.InstallMethod)" 'ERROR'
+        return $false
+      }
+    }
+  } catch {
+    Write-Log "Error installing driver: $($_.Exception.Message)" 'ERROR'
+    return $false
+  }
+}
+
+function Install-WindowsUpdateDriver {
+  param(
+    [string]$UpdateID,
+    [string]$DeviceInstanceID
+  )
+  
+  try {
+    Write-Log "Installing driver via Windows Update..."
+    
+    $updateSession = New-Object -ComObject Microsoft.Update.Session
+    $updateSearcher = $updateSession.CreateUpdateSearcher()
+    
+    # Search for the specific update
+    $searchResult = $updateSearcher.Search("UpdateID='$UpdateID'")
+    
+    if ($searchResult.Updates.Count -eq 0) {
+      Write-Log "Update not found: $UpdateID" 'ERROR'
+      return $false
+    }
+    
+    $update = $searchResult.Updates.Item(0)
+    
+    # Download the update
+    $updatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
+    $updatesToDownload.Add($update)
+    
+    $downloader = $updateSession.CreateUpdateDownloader()
+    $downloader.Updates = $updatesToDownload
+    $downloadResult = $downloader.Download()
+    
+    if ($downloadResult.ResultCode -eq 2) { # OperationResultCode.orcSucceeded
+      Write-Log "Driver downloaded successfully"
+      
+      # Install the update
+      $updatesToInstall = New-Object -ComObject Microsoft.Update.UpdateColl
+      $updatesToInstall.Add($update)
+      
+      $installer = $updateSession.CreateUpdateInstaller()
+      $installer.Updates = $updatesToInstall
+      $installResult = $installer.Install()
+      
+      if ($installResult.ResultCode -eq 2) {
+        Write-Log "Driver installed successfully via Windows Update"
+        return $true
+      } else {
+        Write-Log "Driver installation failed. Result code: $($installResult.ResultCode)" 'ERROR'
+        return $false
+      }
+    } else {
+      Write-Log "Driver download failed. Result code: $($downloadResult.ResultCode)" 'ERROR'
+      return $false
+    }
+    
+  } catch {
+    Write-Log "Error installing Windows Update driver: $($_.Exception.Message)" 'ERROR'
+    return $false
+  }
+}
+
+function Install-PnPDriver {
+  param(
+    [string]$DriverPath,
+    [string]$DeviceInstanceID,
+    [switch]$Force
+  )
+  
+  try {
+    Write-Log "Installing driver via PnPUtil: $DriverPath"
+    
+    # Add driver package to store
+    $args = @("/add-driver", $DriverPath)
+    if ($Force) {
+      $args += "/force"
+    }
+    $args += "/install"
+    
+    $process = Start-Process -FilePath "pnputil.exe" -ArgumentList $args -Wait -PassThru -NoNewWindow
+    
+    if ($process.ExitCode -eq 0) {
+      Write-Log "Driver installed successfully via PnPUtil"
+      
+      # Update specific device if instance ID provided
+      if ($DeviceInstanceID) {
+        Update-DeviceDriver -DeviceInstanceID $DeviceInstanceID
+      }
+      
+      return $true
+    } else {
+      Write-Log "PnPUtil failed with exit code: $($process.ExitCode)" 'ERROR'
+      return $false
+    }
+    
+  } catch {
+    Write-Log "Error installing driver via PnPUtil: $($_.Exception.Message)" 'ERROR'
+    return $false
+  }
+}
+
+function Update-DeviceDriver {
+  param([string]$DeviceInstanceID)
+  
+  try {
+    Write-Log "Updating device driver for: $DeviceInstanceID"
+    
+    # Use DevCon to update device driver if available
+    $devconPath = Get-DevConPath
+    if ($devconPath -and (Test-Path $devconPath)) {
+      $process = Start-Process -FilePath $devconPath -ArgumentList @("update", $DeviceInstanceID) -Wait -PassThru -NoNewWindow
+      if ($process.ExitCode -eq 0) {
+        Write-Log "Device driver updated successfully"
+        return $true
+      }
+    }
+    
+    # Fallback: Try to restart the device
+    $process = Start-Process -FilePath "pnputil.exe" -ArgumentList @("/restart-device", $DeviceInstanceID) -Wait -PassThru -NoNewWindow
+    if ($process.ExitCode -eq 0) {
+      Write-Log "Device restarted successfully"
+      return $true
+    }
+    
+    Write-Log "Could not update device driver automatically" 'WARN'
+    return $false
+    
+  } catch {
+    Write-Log "Error updating device driver: $($_.Exception.Message)" 'ERROR'
+    return $false
+  }
+}
+
+function Get-DevConPath {
+  # Check common locations for DevCon.exe
+  $possiblePaths = @(
+    "${env:ProgramFiles(x86)}\Windows Kits\10\Tools\x64\devcon.exe",
+    "${env:ProgramFiles}\Windows Kits\10\Tools\x64\devcon.exe",
+    "${env:ProgramFiles(x86)}\Windows Kits\8.1\Tools\x64\devcon.exe",
+    "${env:ProgramFiles}\Windows Kits\8.1\Tools\x64\devcon.exe",
+    "$env:TEMP\devcon.exe"
+  )
+  
+  foreach ($path in $possiblePaths) {
+    if (Test-Path $path) {
+      return $path
+    }
+  }
+  
+  return $null
+}
+
+function Backup-CurrentDrivers {
+  param([string]$BackupPath)
+  
+  if (-not $BackupPath) {
+    $BackupPath = Join-Path $global:OutDir "DriverBackup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+  }
+  
+  try {
+    Write-Log "Creating driver backup at: $BackupPath"
+    New-Item -ItemType Directory -Path $BackupPath -Force | Out-Null
+    
+    # Export all driver packages
+    $process = Start-Process -FilePath "pnputil.exe" -ArgumentList @("/export-driver", "*", $BackupPath) -Wait -PassThru -NoNewWindow
+    
+    if ($process.ExitCode -eq 0) {
+      Write-Log "Driver backup completed successfully"
+      return $BackupPath
+    } else {
+      Write-Log "Driver backup failed with exit code: $($process.ExitCode)" 'ERROR'
+      return $null
+    }
+    
+  } catch {
+    Write-Log "Error creating driver backup: $($_.Exception.Message)" 'ERROR'
+    return $null
+  }
+}
+
+function Start-AdvancedDriverScan {
+  Write-Log "Starting advanced driver scan and installation process..."
+  
+  try {
+    # Get comprehensive driver information
+    $driverInfo = Get-SystemDriverInfo
+    
+    if ($driverInfo.MissingDrivers.Count -eq 0) {
+      Show-ToolkitToast "Excellent! No missing drivers detected on your system." "Driver Scan Complete"
+      return $driverInfo
+    }
+    
+    # Create backup before making changes
+    $backupPath = Backup-CurrentDrivers
+    if ($backupPath) {
+      Write-Log "Driver backup created at: $backupPath"
+    }
+    
+    # Search for drivers online
+    $availableDrivers = @()
+    foreach ($device in $driverInfo.MissingDrivers) {
+      Write-Log "Searching drivers for: $($device.Name)"
+      $drivers = Search-OnlineDrivers -DeviceInfo $device
+      foreach ($driver in $drivers) {
+        $driver | Add-Member -NotePropertyName "DeviceInfo" -NotePropertyValue $device
+        $availableDrivers += $driver
+      }
+    }
+    
+    Write-Log "Found $($availableDrivers.Count) available drivers for $($driverInfo.MissingDrivers.Count) devices"
+    
+    # Return results for UI processing
+    return @{
+      SystemInfo = $driverInfo
+      AvailableDrivers = $availableDrivers
+      BackupPath = $backupPath
+    }
+    
+  } catch {
+    Write-Log "Error during advanced driver scan: $($_.Exception.Message)" 'ERROR'
+    Show-ToolkitToast "Error during driver scan: $($_.Exception.Message)" "Driver Scan Error" "Error"
+    return $null
+  }
+}
+
+function Install-SelectedDrivers {
+  param(
+    [Parameter(Mandatory)]
+    [PSCustomObject[]]$DriverList,
+    [switch]$Silent = $true
+  )
+  
+  $successCount = 0
+  $failCount = 0
+  $results = @()
+  
+  Write-Log "Starting installation of $($DriverList.Count) selected drivers..."
+  
+  foreach ($driver in $DriverList) {
+    Write-Log "Installing: $($driver.Title)"
+    
+    try {
+      $deviceInstanceID = if ($driver.DeviceInfo -and $driver.DeviceInfo.DeviceID) { 
+        $driver.DeviceInfo.DeviceID 
+      } else { 
+        $null 
+      }
+      
+      $installResult = Install-DriverPackage -DriverInfo $driver -DeviceInstanceID $deviceInstanceID
+      
+      $result = [PSCustomObject]@{
+        DriverTitle = $driver.Title
+        DeviceName = if ($driver.DeviceInfo) { $driver.DeviceInfo.Name } else { "Unknown" }
+        Success = $installResult
+        Error = if (-not $installResult) { "Installation failed" } else { $null }
+      }
+      
+      $results += $result
+      
+      if ($installResult) {
+        $successCount++
+        Write-Log "Successfully installed: $($driver.Title)"
+      } else {
+        $failCount++
+        Write-Log "Failed to install: $($driver.Title)" 'ERROR'
+      }
+      
+    } catch {
+      $failCount++
+      $error = $_.Exception.Message
+      Write-Log "Error installing $($driver.Title): $error" 'ERROR'
+      
+      $results += [PSCustomObject]@{
+        DriverTitle = $driver.Title
+        DeviceName = if ($driver.DeviceInfo) { $driver.DeviceInfo.Name } else { "Unknown" }
+        Success = $false
+        Error = $error
+      }
+    }
+  }
+  
+  Write-Log "Driver installation complete. Success: $successCount, Failed: $failCount"
+  
+  return @{
+    TotalProcessed = $DriverList.Count
+    SuccessCount = $successCount
+    FailCount = $failCount
+    Results = $results
+  }
+}
+#endregion
+

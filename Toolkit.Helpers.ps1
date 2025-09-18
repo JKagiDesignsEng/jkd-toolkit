@@ -338,5 +338,236 @@ function Start-UpdateCheck {
     }
   }
 }
+
+#region ----- Driver Management Helpers -----
+
+# Show toast notification with different types
+function Show-ToolkitToast {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message,
+        [string]$Title = "JKD Toolkit",
+        [ValidateSet('Success', 'Warning', 'Error', 'Info')]
+        [string]$Type = 'Info'
+    )
+    
+    $icon = switch ($Type) {
+        'Success' { [System.Windows.Forms.MessageBoxIcon]::Information }
+        'Warning' { [System.Windows.Forms.MessageBoxIcon]::Warning }
+        'Error'   { [System.Windows.Forms.MessageBoxIcon]::Error }
+        default   { [System.Windows.Forms.MessageBoxIcon]::Information }
+    }
+    
+    [System.Windows.Forms.MessageBox]::Show($Message, $Title, [System.Windows.Forms.MessageBoxButtons]::OK, $icon) | Out-Null
+}
+
+# Enhanced toast notification for driver operations
+function Show-DriverToast {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message,
+        [string]$Title = "Driver Management",
+        [ValidateSet('Success', 'Warning', 'Error', 'Info')]
+        [string]$Type = 'Info'
+    )
+    
+    Write-Log "Driver Toast: [$Type] $Message"
+    Show-ToolkitToast -Message $Message -Title $Title -Type $Type
+}
+
+# Progress tracking for driver operations
+function Update-DriverProgress {
+    param(
+        [int]$Current,
+        [int]$Total,
+        [string]$Operation,
+        [string]$DeviceName
+    )
+    
+    $percent = [math]::Round(($Current / $Total) * 100, 0)
+    Write-Log "Driver Progress: $Operation - $DeviceName ($Current/$Total - $percent%)"
+    
+    # Return progress info for UI updates
+    return @{
+        Current = $Current
+        Total = $Total
+        Percent = $percent
+        Operation = $Operation
+        DeviceName = $DeviceName
+    }
+}
+
+# Validate driver package before installation
+function Test-DriverPackage {
+    param(
+        [Parameter(Mandatory)]
+        [string]$DriverPath
+    )
+    
+    try {
+        if (-not (Test-Path $DriverPath)) {
+            Write-Log "Driver package not found: $DriverPath" 'ERROR'
+            return $false
+        }
+        
+        $extension = [System.IO.Path]::GetExtension($DriverPath).ToLower()
+        $validExtensions = @('.inf', '.cab', '.exe', '.msi')
+        
+        if ($extension -notin $validExtensions) {
+            Write-Log "Invalid driver package type: $extension" 'ERROR'
+            return $false
+        }
+        
+        # Additional validation for .inf files
+        if ($extension -eq '.inf') {
+            $infContent = Get-Content $DriverPath -ErrorAction SilentlyContinue
+            if (-not $infContent -or $infContent -notmatch '\[Version\]') {
+                Write-Log "Invalid INF file format: $DriverPath" 'ERROR'
+                return $false
+            }
+        }
+        
+        Write-Log "Driver package validated: $DriverPath"
+        return $true
+    }
+    catch {
+        Write-Log "Error validating driver package: $($_.Exception.Message)" 'ERROR'
+        return $false
+    }
+}
+
+# Get driver information from INF file
+function Get-DriverInfoFromINF {
+    param(
+        [Parameter(Mandatory)]
+        [string]$INFPath
+    )
+    
+    try {
+        if (-not (Test-Path $INFPath)) {
+            return $null
+        }
+        
+        $infContent = Get-Content $INFPath
+        $driverInfo = @{
+            DriverName = [System.IO.Path]::GetFileNameWithoutExtension($INFPath)
+            Version = 'Unknown'
+            Date = 'Unknown'
+            Provider = 'Unknown'
+            HardwareIDs = @()
+        }
+        
+        foreach ($line in $infContent) {
+            if ($line -match '^DriverVer\s*=\s*(.+)') {
+                $verInfo = $matches[1] -split ','
+                if ($verInfo.Count -ge 2) {
+                    $driverInfo.Date = $verInfo[0].Trim()
+                    $driverInfo.Version = $verInfo[1].Trim()
+                }
+            }
+            elseif ($line -match '^Provider\s*=\s*(.+)') {
+                $driverInfo.Provider = $matches[1].Trim() -replace '"', ''
+            }
+        }
+        
+        return $driverInfo
+    }
+    catch {
+        Write-Log "Error reading INF file $INFPath`: $($_.Exception.Message)" 'ERROR'
+        return $null
+    }
+}
+
+# Create driver installation report
+function New-DriverInstallReport {
+    param(
+        [array]$Results,
+        [string]$ReportPath
+    )
+    
+    try {
+        $report = @()
+        $report += "JKD Toolkit - Driver Installation Report"
+        $report += "Generated: $(Get-Date)"
+        $report += "=" * 50
+        $report += ""
+        
+        $successful = $Results | Where-Object { $_.Success }
+        $failed = $Results | Where-Object { -not $_.Success }
+        
+        $report += "Summary:"
+        $report += "  Total drivers processed: $($Results.Count)"
+        $report += "  Successful installations: $($successful.Count)"
+        $report += "  Failed installations: $($failed.Count)"
+        $report += ""
+        
+        if ($successful.Count -gt 0) {
+            $report += "Successful Installations:"
+            $report += "-" * 25
+            foreach ($result in $successful) {
+                $report += "  ✓ $($result.DeviceName) - $($result.DriverName)"
+                if ($result.Version) {
+                    $report += "    Version: $($result.Version)"
+                }
+            }
+            $report += ""
+        }
+        
+        if ($failed.Count -gt 0) {
+            $report += "Failed Installations:"
+            $report += "-" * 20
+            foreach ($result in $failed) {
+                $report += "  ✗ $($result.DeviceName) - $($result.DriverName)"
+                $report += "    Error: $($result.Error)"
+            }
+            $report += ""
+        }
+        
+        $report | Out-File -FilePath $ReportPath -Encoding UTF8
+        Write-Log "Driver installation report saved to: $ReportPath"
+        
+        return $ReportPath
+    }
+    catch {
+        Write-Log "Error creating driver installation report: $($_.Exception.Message)" 'ERROR'
+        return $null
+    }
+}
+
+# Check if system requires restart after driver installation
+function Test-RestartRequired {
+    try {
+        # Check for pending reboot indicators
+        $pendingReboot = $false
+        
+        # Check registry keys that indicate pending reboot
+        $regKeys = @(
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired',
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
+            'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\PendingFileRenameOperations'
+        )
+        
+        foreach ($key in $regKeys) {
+            if (Test-Path $key) {
+                $pendingReboot = $true
+                break
+            }
+        }
+        
+        # Check for pending driver installations
+        $driverPending = Get-WmiObject -Class Win32_SystemDriver | Where-Object { $_.State -eq 'Stopped' -and $_.StartMode -eq 'Manual' }
+        if ($driverPending) {
+            $pendingReboot = $true
+        }
+        
+        return $pendingReboot
+    }
+    catch {
+        Write-Log "Error checking restart requirements: $($_.Exception.Message)" 'WARN'
+        return $false
+    }
+}
+
+#endregion
 #endregion
 
