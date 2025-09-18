@@ -106,7 +106,11 @@ function Get-LatestVersionFromGitHub {
     return $response.tag_name -replace '^v', ''
   }
   catch {
-    Write-Log "Could not check for updates: $($_.Exception.Message)" 'WARN'
+    if ($_.Exception.Message -match "404") {
+      Write-Log "No releases found on GitHub repository" 'INFO'
+    } else {
+      Write-Log "Could not check for updates: $($_.Exception.Message)" 'WARN'
+    }
     return $null
   }
 }

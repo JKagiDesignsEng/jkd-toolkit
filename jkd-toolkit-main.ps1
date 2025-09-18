@@ -1025,30 +1025,65 @@ $panelDriversInner.Dock = [System.Windows.Forms.DockStyle]::Fill
 $panelDriversInner.Padding = New-Object System.Windows.Forms.Padding(10)
 $panelDriversInner.Margin = New-Object System.Windows.Forms.Padding(0)
 
-# Driver grid
-$gridDrivers = New-Object System.Windows.Forms.DataGridView
-$gridDrivers.Dock = [System.Windows.Forms.DockStyle]::Fill
-$gridDrivers.ReadOnly = $true
-$gridDrivers.AutoSizeColumnsMode = 'Fill'
-$gridDrivers.RowHeadersVisible = $false
-$gridDrivers.AllowUserToAddRows = $false
-$gridDrivers.SelectionMode = 'FullRowSelect'
-$gridDrivers.MultiSelect = $true
-$gridDrivers.BackgroundColor = [System.Drawing.Color]::White
-$gridDrivers.BorderStyle = 'Fixed3D'
-$gridDrivers.ScrollBars = 'Both'
-$gridDrivers.AutoSizeRowsMode = 'None'
-$gridDrivers.ColumnHeadersHeightSizeMode = 'AutoSize'
+$gv = $global:gridDrivers
+if (-not ($gv -and ($gv -is [System.Windows.Forms.DataGridView]))) {
+  try {
+    $gv = New-Object System.Windows.Forms.DataGridView
+    Set-Variable -Name gridDrivers -Scope Global -Value $gv
+  }
+  catch {
+    Write-Log "Failed to create driver grid: $($_.Exception.Message)" 'ERROR'
+    $gv = $null
+  }
+}
 
-# Add checkbox column for selection
-$checkColumn = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
-$checkColumn.HeaderText = "Select"
-$checkColumn.Name = "Select"
-$checkColumn.Width = 50
-$checkColumn.ReadOnly = $false
-$gridDrivers.Columns.Add($checkColumn) | Out-Null
+if ($gv) {
+  # Configure grid properties via local handle
+  $gv.Dock = [System.Windows.Forms.DockStyle]::Fill
+  $gv.ReadOnly = $true
+  $gv.AutoSizeColumnsMode = 'Fill'
+  $gv.RowHeadersVisible = $false
+  $gv.AllowUserToAddRows = $false
+  $gv.SelectionMode = 'FullRowSelect'
+  $gv.MultiSelect = $true
+  $gv.BackgroundColor = [System.Drawing.Color]::White
+  $gv.BorderStyle = 'Fixed3D'
+  $gv.ScrollBars = 'Both'
+  $gv.AutoSizeRowsMode = 'None'
+  $gv.ColumnHeadersHeightSizeMode = 'AutoSize'
 
-$panelDriversInner.Controls.Add($gridDrivers)
+  # Add checkbox column for selection
+  $checkColumn = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+  $checkColumn.HeaderText = "Select"
+  $checkColumn.Name = "Select"
+  $checkColumn.Width = 50
+  $checkColumn.ReadOnly = $false
+  if (-not ($gv.Columns.Contains($checkColumn.Name))) {
+    $gv.Columns.Add($checkColumn) | Out-Null
+  }
+
+  # Attach event handlers safely
+  try {
+    if (-not $gv.CellContentClick) { throw "No CellContentClick event on grid" }
+    $gv.CellContentClick.Add({
+      param($sender, $e)
+      if ($e.ColumnIndex -eq 0 -and $e.RowIndex -ge 0) {
+        $sender.CommitEdit([System.Windows.Forms.DataGridViewDataErrorContexts]::Commit)
+        Update-DriverButtonStates
+      }
+    })
+
+    $gv.SelectionChanged.Add({ Update-DriverButtonStates })
+  }
+  catch {
+    Write-Log "Failed to attach driver grid events: $($_.Exception.Message)" 'WARN'
+  }
+
+  $panelDriversInner.Controls.Add($gv)
+}
+else {
+  Write-Log "Driver grid not available; skipping UI wiring" 'WARN'
+}
 $panelDrivers.Controls.Add($panelDriversInner)
 
 # Driver tab layout
@@ -1428,25 +1463,12 @@ $btnRestoreDrivers.Add_Click({
     }
 })
 
-# Grid selection event handlers
-$gridDrivers.CellContentClick.Add({
-    param($sender, $e)
-    if ($e.ColumnIndex -eq 0 -and $e.RowIndex -ge 0) {  # Checkbox column
-        $sender.CommitEdit([System.Windows.Forms.DataGridViewDataErrorContexts]::Commit)
-        Update-DriverButtonStates
-    }
-})
-
-$gridDrivers.SelectionChanged.Add({
-    Update-DriverButtonStates
-})
-
 # Helper functions for driver management
 function Update-DriverGrid {
     param([array]$Drivers)
     
-    $gridDrivers.DataSource = $null
-    $gridDrivers.Rows.Clear()
+  $global:gridDrivers.DataSource = $null
+  $global:gridDrivers.Rows.Clear()
     
     if ($Drivers -and $Drivers.Count -gt 0) {
         # Create data table
@@ -1471,16 +1493,16 @@ function Update-DriverGrid {
             $dataTable.Rows.Add($row)
         }
         
-        $gridDrivers.DataSource = $dataTable
+  $global:gridDrivers.DataSource = $dataTable
         
         # Adjust column widths
-        $gridDrivers.Columns["Select"].Width = 50
-        $gridDrivers.Columns["Device Name"].Width = 200
-        $gridDrivers.Columns["Status"].Width = 100
-        $gridDrivers.Columns["Current Driver"].Width = 120
-        $gridDrivers.Columns["Available Driver"].Width = 120
-        $gridDrivers.Columns["Date"].Width = 100
-        $gridDrivers.Columns["Hardware ID"].Width = 150
+  $global:gridDrivers.Columns["Select"].Width = 50
+  $global:gridDrivers.Columns["Device Name"].Width = 200
+  $global:gridDrivers.Columns["Status"].Width = 100
+  $global:gridDrivers.Columns["Current Driver"].Width = 120
+  $global:gridDrivers.Columns["Available Driver"].Width = 120
+  $global:gridDrivers.Columns["Date"].Width = 100
+  $global:gridDrivers.Columns["Hardware ID"].Width = 150
     }
     
     Update-DriverButtonStates
@@ -1489,13 +1511,13 @@ function Update-DriverGrid {
 function Get-SelectedDrivers {
     $selectedDrivers = @()
     
-    if ($gridDrivers.DataSource) {
-        for ($i = 0; $i -lt $gridDrivers.Rows.Count; $i++) {
-            if ($gridDrivers.Rows[$i].Cells["Select"].Value -eq $true) {
-                $selectedDrivers += $global:DriverScanResults[$i]
-            }
-        }
+  if ($global:gridDrivers.DataSource) {
+    for ($i = 0; $i -lt $global:gridDrivers.Rows.Count; $i++) {
+      if ($global:gridDrivers.Rows[$i].Cells["Select"].Value -eq $true) {
+        $selectedDrivers += $global:DriverScanResults[$i]
+      }
     }
+  }
     
     return $selectedDrivers
 }

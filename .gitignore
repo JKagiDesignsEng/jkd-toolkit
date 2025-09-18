@@ -1,2 +1,6 @@
 \Exports\
 \Logs\
+*.txt
+*.log
+*.old
+*.bak
