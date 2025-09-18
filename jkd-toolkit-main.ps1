@@ -31,11 +31,14 @@ param()
 # Ensure we're running as admin - pass the main script path
 Test-AdminAndElevate -MainScriptPath $MyInvocation.MyCommand.Path
 
+# Check for updates on startup (silent check)
+Start-UpdateCheck -Silent
+
 #endregion
 
 #region ----- UI (WinForms) -----
 $form                 = New-Object System.Windows.Forms.Form
-$form.Text            = 'JKagiDesigns LLC Win11 Tech Toolkit'
+$form.Text            = "JKagiDesigns LLC Win11 Tech Toolkit v$(Get-ToolkitVersion)"
 $form.Size            = New-Object System.Drawing.Size(900, 650)
 $form.MinimumSize     = New-Object System.Drawing.Size(900, 650)
 $form.StartPosition   = 'CenterScreen'
@@ -996,8 +999,10 @@ $btnTsk = New-Object System.Windows.Forms.Button; $btnTsk.Text='Task Manager';  
 $btnWU2 = New-Object System.Windows.Forms.Button; $btnWU2.Text='Windows Update';  $btnWU2.Size=New-Object System.Drawing.Size(160,40); $btnWU2.Location=New-Object System.Drawing.Point(690,10)
 
 $btnStart = New-Object System.Windows.Forms.Button; $btnStart.Text='Startup Apps'; $btnStart.Size=New-Object System.Drawing.Size(160,40); $btnStart.Location=New-Object System.Drawing.Point(10,60)
+$btnUpdate = New-Object System.Windows.Forms.Button; $btnUpdate.Text='Check for Updates'; $btnUpdate.Size=New-Object System.Drawing.Size(180,40); $btnUpdate.Location=New-Object System.Drawing.Point(180,60)
+$btnAbout = New-Object System.Windows.Forms.Button; $btnAbout.Text='About Toolkit'; $btnAbout.Size=New-Object System.Drawing.Size(160,40); $btnAbout.Location=New-Object System.Drawing.Point(370,60)
 
-$tabTools.Controls.AddRange(@($btnDev,$btnEvt,$btnSrv,$btnTsk,$btnWU2,$btnStart))
+$tabTools.Controls.AddRange(@($btnDev,$btnEvt,$btnSrv,$btnTsk,$btnWU2,$btnStart,$btnUpdate,$btnAbout))
 
 $tooltip.SetToolTip($btnDev, 'Opens Device Manager to view and manage hardware devices and drivers')
 $btnDev.Add_Click({ Start-SystemTool 'DeviceManager' })
@@ -1011,6 +1016,32 @@ $tooltip.SetToolTip($btnWU2, 'Opens Windows Update settings to check for and ins
 $btnWU2.Add_Click({ Start-SystemTool 'WindowsUpdate' })
 $tooltip.SetToolTip($btnStart, 'Opens Startup Apps settings to manage which programs start with Windows')
 $btnStart.Add_Click({ Start-SystemTool 'StartupApps' })
+$tooltip.SetToolTip($btnUpdate, 'Check for and install updates to the JKD-Toolkit from GitHub')
+$btnUpdate.Add_Click({ Start-UpdateCheck -Force })
+$tooltip.SetToolTip($btnAbout, 'Display version information and details about the JKD-Toolkit')
+$btnAbout.Add_Click({ 
+  $aboutText = @"
+JKD-Toolkit - Windows 11 Tech Toolkit
+Version: $(Get-ToolkitVersion)
+
+Author: ChatGPT for Josh (JKagiDesigns / Cultivatronics)
+Repository: https://github.com/$global:RepoOwner/$global:RepoName
+
+A comprehensive PowerShell-based GUI toolkit for IT professionals
+and technicians to troubleshoot, repair, and set up Windows 11 systems.
+
+Features:
+• System diagnostics and repair tools
+• Network troubleshooting utilities  
+• Application management (install/uninstall)
+• Driver detection and management
+• Privacy and customization tools
+• Automatic update checking
+
+Last Update Check: $(if ((Get-LastUpdateCheck) -eq [datetime]::MinValue) { 'Never' } else { (Get-LastUpdateCheck).ToString('yyyy-MM-dd HH:mm') })
+"@
+  Show-ToolkitToast $aboutText "About JKD-Toolkit"
+})
 
 #endregion
 
