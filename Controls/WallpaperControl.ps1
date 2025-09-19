@@ -47,6 +47,8 @@ function Add-WallpaperButton {
             }
         } catch {
             Write-Host "Error setting wallpaper: $($_.Exception.Message)"
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
         }
     })
 

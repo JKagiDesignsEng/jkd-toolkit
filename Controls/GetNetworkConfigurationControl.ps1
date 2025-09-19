@@ -56,6 +56,8 @@ function Add-GetNetworkConfigurationButton {
             } else { Write-Host 'No network configuration found.' }
         } catch {
             Write-Host "Error retrieving network configuration: $($_.Exception.Message)"
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
         }
     })
 

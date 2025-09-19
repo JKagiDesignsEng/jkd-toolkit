@@ -47,8 +47,8 @@ function Add-CheckHealthButton {
   $btn.Tag = @{ ToolTip = $tt }
 
     # Click handler: run DISM checkhealth and stream output to the console.
-    $btn.Add_Click({
-        try {
+  $btn.Add_Click({
+    try {
             Write-Host 'Running: DISM /online /Cleanup-image /CheckHealth'
             $args = @('/online','/Cleanup-image','/CheckHealth')
             if ($global:LimitAccess) { $args += '/LimitAccess' }
@@ -58,9 +58,11 @@ function Add-CheckHealthButton {
             } else {
                 Write-Host 'DISM returned no output.'
             }
-        } catch {
-            Write-Host "Error running DISM: $($_.Exception.Message)"
-        }
+    } catch {
+      Write-Host "Error running DISM: $($_.Exception.Message)"
+    } finally {
+      if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
+    }
     })
 
   $Parent.Controls.Add($btn)

@@ -96,6 +96,7 @@ function Add-RestoreHealthFromISOButton {
                     foreach ($att in $wingetAttempts) {
                         try {
                             Write-Host "Attempting winget install: $att"
+                                
                             if ($att -like 'search*') {
                                 # perform a search and try to install the found id
                                 $found = & winget search "Media Creation Tool" --source winget 2>$null | Select-Object -First 1
@@ -227,6 +228,8 @@ function Add-RestoreHealthFromISOButton {
 
         } catch {
             Write-Host "Error in RestoreHealthFromISO control: $($_.Exception.Message)"
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
         }
     })
 

@@ -406,8 +406,8 @@ function Add-GetInstalledApplicationsControl {
             }
         }
     if ($alist) { try { $alist.Clear() } catch { } }
-        # Inline update buttons logic
-        try {
+    # Inline update buttons logic
+    try {
             $local = $null
             foreach ($f in [System.Windows.Forms.Application]::OpenForms) {
                 $g = $f.Controls.Find('dgvApps', $true)
@@ -424,12 +424,16 @@ function Add-GetInstalledApplicationsControl {
                     if ($btnU -and $btnU.Count -gt 0) { $btnU[0].Enabled = $has }
                 }
             }
-    } catch { }
+    } catch { 
         Write-Host 'Cleared search/results.'
-    })
+            } finally {
+                if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
+            }
+        })
 
     # Search action
     $btnSearch.Add_Click({ param($s,$e)
+        try {
         $owner = $s.Tag
         if (-not $owner) { $owner = $s.Parent }
         $txt = $null
@@ -484,6 +488,9 @@ function Add-GetInstalledApplicationsControl {
                 }
             }
     } catch { }
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
+        }
     })
 
     # Installed action: reload installed apps into the grid
@@ -518,11 +525,14 @@ function Add-GetInstalledApplicationsControl {
                 if ($btnU -and $btnU.Count -gt 0) { $btnU[0].Enabled = $false }
             }
             Write-Host 'Loaded installed applications.'
-    } catch { }
+        } catch { } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
+        }
     })
 
     # Install action
     $btnInstall.Add_Click({ param($s,$e)
+        try {
         # Locate the grid from the sender's owner or via OpenForms fallback
         $grid = $null
         try {
@@ -594,11 +604,15 @@ function Add-GetInstalledApplicationsControl {
             $regApps = Get-InstalledAppsFromRegistry
             foreach ($a in $regApps) { $alist.Add($a) }
             if ($grid) { $grid.DataSource = $null; $grid.DataSource = $alist }
-    } catch { }
+        } catch { }
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
+        }
     })
 
     # Uninstall action
     $btnUninstall.Add_Click({ param($s,$e)
+        try {
         # Locate the grid from the sender's owner or via OpenForms fallback
         $grid = $null
         try {
@@ -671,7 +685,10 @@ function Add-GetInstalledApplicationsControl {
             $regApps = Get-InstalledAppsFromRegistry
             foreach ($a in $regApps) { $alist.Add($a) }
             if ($grid) { $grid.DataSource = $null; $grid.DataSource = $alist }
-    } catch { }
+        } catch { }
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
+        }
     })
 
     # Initialize installed app listing: populate local appList and bind immediately to the local grid.
@@ -686,3 +703,4 @@ function Add-GetInstalledApplicationsControl {
     $Parent.Controls.Add($panel)
     return $panel
 }
+

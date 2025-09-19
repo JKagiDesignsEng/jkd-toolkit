@@ -59,6 +59,12 @@ Notes:
     $tt.SetToolTip($btn, $ttText)
     $btn.Tag = @{ ToolTip = $tt }
 
+    # Shared timer instance used to poll the background job state. Create here so handlers can reference it
+    # and store on the button Tag so it isn't garbage-collected.
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 2000
+    $btn.Tag.Timer = $timer
+
     # Click handler: perform update workflow in background runspace to keep UI responsive
     $btn.Add_Click({
         try {
@@ -159,45 +165,13 @@ Notes:
                 }
             }
 
-            # Start the background job with a stable name so the status button can find it
+            # Start the background job with a stable name so the status handler can find it
             $job = Start-Job -Name 'RunMicrosoftUpdate' -ScriptBlock $jobScript
             Write-Host "Started background job (Id: $($job.Id)) to run updates. Use Get-Job/Receive-Job to inspect output if needed."
-            if (Get-Command -Name Write-Divider -ErrorAction SilentlyContinue) { Write-Divider }
-            # Poll job in background and re-enable button when done
-            $timer = New-Object System.Windows.Forms.Timer
-            $timer.Interval = 2000
-            $timer.Add_Tick({
-                try {
-                    if ($job -and (Get-Job -Id $job.Id -ErrorAction SilentlyContinue)) {
-                        $st = (Get-Job -Id $job.Id).State
-                        if ($st -eq 'Completed' -or $st -eq 'Failed' -or $st -eq 'Stopped') {
-                            try { Receive-Job -Id $job.Id -Keep | ForEach-Object { Write-Host $_ } } catch { }
-                            if (Get-Command -Name Write-Divider -ErrorAction SilentlyContinue) { Write-Divider }
-                            try { Remove-Job -Id $job.Id -Force -ErrorAction SilentlyContinue } catch { }
-                            if ($timer) { $timer.Stop() }
-                            try {
-                                $found = $null
-                                [System.Windows.Forms.Application]::OpenForms | ForEach-Object {
-                                    $c = $_.Controls.Find('btnRunMicrosoftUpdate', $true)
-                                    if ($c -and $c.Count -gt 0) { $found = $c[0]; return }
-                                }
-                                if ($found -and $found.GetType().GetProperty('Enabled')) { $found.Enabled = $true }
-                            } catch { }
-                        }
-                    } else {
-                        if ($timer) { $timer.Stop() }
-                        try {
-                            $found = $null
-                            [System.Windows.Forms.Application]::OpenForms | ForEach-Object {
-                                $c = $_.Controls.Find('btnRunMicrosoftUpdate', $true)
-                                if ($c -and $c.Count -gt 0) { $found = $c[0]; return }
-                            }
-                            if ($found -and $found.GetType().GetProperty('Enabled')) { $found.Enabled = $true }
-                        } catch { }
-                    }
-                } catch { if ($timer) { $timer.Stop() }; try { $found = $null; [System.Windows.Forms.Application]::OpenForms | ForEach-Object { $c = $_.Controls.Find('btnRunMicrosoftUpdate', $true); if ($c -and $c.Count -gt 0) { $found = $c[0]; return } }; if ($found -and $found.GetType().GetProperty('Enabled')) { $found.Enabled = $true } } catch { } }
-            })
-            $timer.Start()
+            # Set shared status bar immediately to indicate job started
+            if (Get-Command -Name Set-StatusBar -ErrorAction SilentlyContinue) { Set-StatusBar -Text 'Run Microsoft Update: job started...' -TimeoutSeconds 0 }
+            # Start the timer stored on the button Tag so it's not garbage-collected
+            try { if ($btn.Tag.Timer -and $btn.Tag.Timer -is [System.Windows.Forms.Timer]) { $btn.Tag.Timer.Start() } } catch { }
 
         } catch {
             Write-Host "Failed to start Microsoft Update workflow: $($_.Exception.Message)"
@@ -209,94 +183,57 @@ Notes:
                 }
                 if ($found -and $found.GetType().GetProperty('Enabled')) { $found.Enabled = $true }
             } catch { }
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
         }
     })
 
+    # Add button to parent
     $Parent.Controls.Add($btn)
-    # --- Add 'Get Update Status' button under the main button ---
-    $statusBtn = New-Object System.Windows.Forms.Button
-    $statusBtn.Text = 'Get Update Status'
-    $statusBtn.Size = (New-Object System.Drawing.Size(160,24))
-    # If parent is FlowLayoutPanel, use Margin; otherwise compute Location as before
-    if ($Parent -is [System.Windows.Forms.FlowLayoutPanel]) {
-        $statusBtn.Margin = New-Object System.Windows.Forms.Padding(0,0,0,8)
-        $statusY = 0
-    } else {
-        $statusX = $btn.Location.X
-        $statusY = $btn.Location.Y + $btn.Size.Height + 8
-        $statusBtn.Location = New-Object System.Drawing.Point -ArgumentList $statusX, $statusY
-    }
-    $statusBtn.Name = 'btnGetUpdateStatus'
-    $tt.SetToolTip($statusBtn, "Query the background update job started by 'Run Microsoft Update' and show its state and recent output.")
 
-    $statusBtn.Add_Click({
+    # Wire usage of shared status bar: when the job starts and when it completes, update the status strip
+    # The timer already in this control will re-enable the button; update it to also set/clear status text.
+    # Note: Set-StatusBar / Clear-StatusBar are defined on the main form (dot-sourced environment).
+
+    # Enhance the timer tick handler already defined earlier to set status text (job running -> 'Running updates...')
+    if ($btn.Tag.Timer -and $btn.Tag.Timer -is [System.Windows.Forms.Timer]) {
+        $btn.Tag.Timer.Add_Tick({
         try {
-            # Find the most recent job started by the RunMicrosoftUpdate button
             $job = Get-Job -Name 'RunMicrosoftUpdate' -ErrorAction SilentlyContinue | Sort-Object Id -Descending | Select-Object -First 1
-            if (-not $job) {
-                [System.Windows.Forms.MessageBox]::Show('No RunMicrosoftUpdate job found in this session. Start the update workflow first.','Update Status',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-                return
-            }
-
-            $state = $job.State
-            $hasMore = $job.HasMoreData
-            $msg = "Job Id: $($job.Id)`nState: $state`nHasMoreData: $hasMore"
-
-            if ($state -in @('Completed','Failed','Stopped')) {
-                # Try to get the output (keep it so multiple inspections are possible)
-                try {
-                    $out = Receive-Job -Id $job.Id -Keep -ErrorAction SilentlyContinue | Out-String
-                    if ($out) { $msg += "`n`nOutput:`n$out" }
-                } catch {
-                    $msg += "`n`n(Output could not be retrieved: $($_.Exception.Message))"
+            if ($job) {
+                if ($job.State -in 'Running','NotStarted') {
+                    if (Get-Command -Name Set-StatusBar -ErrorAction SilentlyContinue) { Set-StatusBar -Text 'Run Microsoft Update: job running...' -TimeoutSeconds 0 }
+                } elseif ($job.State -in 'Completed','Failed','Stopped') {
+                    try { Receive-Job -Id $job.Id -Keep | ForEach-Object { Write-Host $_ } } catch {}
+                    if (Get-Command -Name Set-StatusBar -ErrorAction SilentlyContinue) { Set-StatusBar -Text "Run Microsoft Update: job $($job.State)" -TimeoutSeconds 8 }
+                    try { Remove-Job -Id $job.Id -Force -ErrorAction SilentlyContinue } catch {}
+                    if ($btn.Tag.Timer) { $btn.Tag.Timer.Stop() }
+                    try {
+                        $found = $null
+                        [System.Windows.Forms.Application]::OpenForms | ForEach-Object {
+                            $c = $_.Controls.Find('btnRunMicrosoftUpdate', $true)
+                            if ($c -and $c.Count -gt 0) { $found = $c[0]; return }
+                        }
+                        if ($found -and $found.GetType().GetProperty('Enabled')) { $found.Enabled = $true }
+                    } catch { }
                 }
             } else {
-                $msg += "`n`nNote: Job is still running. Use Receive-Job -Id $($job.Id) -Wait -Keep in a console to capture output when it completes."
+                if ($btn.Tag.Timer) { $btn.Tag.Timer.Stop() }
+                if (Get-Command -Name Clear-StatusBar -ErrorAction SilentlyContinue) { Clear-StatusBar }
+                try {
+                    $found = $null
+                    [System.Windows.Forms.Application]::OpenForms | ForEach-Object {
+                        $c = $_.Controls.Find('btnRunMicrosoftUpdate', $true)
+                        if ($c -and $c.Count -gt 0) { $found = $c[0]; return }
+                    }
+                    if ($found -and $found.GetType().GetProperty('Enabled')) { $found.Enabled = $true }
+                } catch { }
             }
-
-            [System.Windows.Forms.MessageBox]::Show($msg,'Update Status',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-        } catch {
-            [System.Windows.Forms.MessageBox]::Show("Error querying update job: $($_.Exception.Message)") | Out-Null
-        }
-    })
-
-    $Parent.Controls.Add($statusBtn)
-    # Shift other controls that sit below the new status button so they don't overlap
-    try {
-        $shiftHeight = $statusBtn.Size.Height + 8
-        foreach ($ctrl in $Parent.Controls) {
-            if ($null -eq $ctrl) { continue }
-            # Skip the two buttons we just added
-            if ($ctrl.Name -in @('btnRunMicrosoftUpdate','btnGetUpdateStatus')) { continue }
-            try {
-                $loc = $ctrl.Location
-                if ($loc.Y -ge $statusY) {
-                    $newY = $loc.Y + $shiftHeight
-                    $newX = $loc.X
-                    $ctrl.Location = New-Object System.Drawing.Point -ArgumentList $newX, $newY
-                }
-            } catch { }
-        }
-    } catch { }
-
-    # Also handle controls added later (for example, Toggle Dark Mode is added by the main script after this control)
-    try {
-        $onAdded = {
-            param($sender, $e)
-            try {
-                $added = $e.Control
-                if ($null -eq $added) { return }
-                if ($added.Name -in @('btnRunMicrosoftUpdate','btnGetUpdateStatus')) { return }
-                # If the newly added control would overlap the status button, shift it down
-                $aLoc = $added.Location
-                if ($aLoc.Y -ge $statusY) {
-                    $newY = $aLoc.Y + $shiftHeight
-                    $added.Location = New-Object System.Drawing.Point -ArgumentList $aLoc.X, $newY
-                }
-            } catch { }
-        }
-        $Parent.add_ControlAdded($onAdded)
-    } catch { }
+        } catch { if ($timer) { $timer.Stop() } }
+        })
+    } else {
+        Write-Host 'Warning: Cannot attach job-polling tick handler because timer could not be created.'
+    }
 
     return $btn
 }

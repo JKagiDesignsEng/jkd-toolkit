@@ -30,26 +30,30 @@ function Add-CheckDiskButton {
 
   $btn.Add_Click({
     try {
-      Write-Host "About to run: chkdsk C: /f"
-      $confirm = Read-Host 'Continue? This may schedule a check on next reboot if the volume is locked. (Y/N)'
-      if ($confirm -ne 'Y' -and $confirm -ne 'y') { Write-Host 'Aborted by user.'; return }
-
-      # Inform about elevation requirement
-      $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-      if (-not $isAdmin) { Write-Host 'Warning: chkdsk may require administrative privileges to run; running anyway.' }
-
-      Write-Host 'Running: chkdsk C: /f'
       try {
-        $output = & chkdsk.exe 'C:' '/f' 2>&1
-        if ($output) { $output | ForEach-Object { Write-Host $_ } } else { Write-Host 'chkdsk returned no output.' }
-      } catch {
-        Write-Host "Error running chkdsk: $($_.Exception.Message)"
-      }
+        Write-Host "About to run: chkdsk C: /f"
+        $confirm = Read-Host 'Continue? This may schedule a check on next reboot if the volume is locked. (Y/N)'
+        if ($confirm -ne 'Y' -and $confirm -ne 'y') { Write-Host 'Aborted by user.'; return }
 
-    } catch {
-      Write-Host "Unexpected error in Check Disk control: $($_.Exception.Message)"
+        # Inform about elevation requirement
+        $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        if (-not $isAdmin) { Write-Host 'Warning: chkdsk may require administrative privileges to run; running anyway.' }
+
+        Write-Host 'Running: chkdsk C: /f'
+        try {
+          $output = & chkdsk.exe 'C:' '/f' 2>&1
+          if ($output) { $output | ForEach-Object { Write-Host $_ } } else { Write-Host 'chkdsk returned no output.' }
+        } catch {
+          Write-Host "Error running chkdsk: $($_.Exception.Message)"
+        }
+      } catch {
+        Write-Host "Unexpected error in Check Disk control: $($_.Exception.Message)"
+      }
+    } finally {
+      if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
     }
   })
+  # Divider will run from the finally block above to ensure it always executes.
 
   $Parent.Controls.Add($btn)
   return $btn

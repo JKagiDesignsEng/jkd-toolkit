@@ -60,14 +60,8 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 [void][System.Windows.Forms.Application]::EnableVisualStyles()
 [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
 
-# Wrapper for Write-Host that prints a divider after likely command-completion messages.
-# This is a heuristic: it looks for keywords like 'complete','finished','started background job','triggered','failed','error'.
-function Write-Divider {
-    param(
-        [string]$Color = 'DarkGray'
-    )
-    & Microsoft.PowerShell.Utility\Write-Host '----------------------------------------------------------------' -ForegroundColor $Color
-}
+# Load shared ASCII divider helper
+. "$PSScriptRoot\Controls\Helpers\AsciiDivider.ps1"
 
 # Create form
 $form = New-Object System.Windows.Forms.Form
@@ -83,6 +77,44 @@ if (Test-Path -Path $iconPath) {
     }
 } else {
     Write-Host "Info: Icon not found at $iconPath - continuing without a form icon."
+}
+
+
+# --- Status bar (single shared status area for background-job controls) ---
+$statusStrip = New-Object System.Windows.Forms.StatusStrip
+$tsStatusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
+$tsStatusLabel.Name = 'tsStatusLabel'
+$tsStatusLabel.Text = ''
+$statusStrip.Items.Add($tsStatusLabel) | Out-Null
+$statusStrip.Dock = 'Bottom'
+$form.Controls.Add($statusStrip)
+
+# Timer used for clearing ephemeral status messages
+$global:tsStatusTimer = $null
+
+function Set-StatusBar {
+    param(
+        [Parameter(Mandatory=$true)][string]$Text,
+        [int]$TimeoutSeconds = 0
+    )
+    try {
+        $tsStatusLabel.Text = $Text
+        if ($global:tsStatusTimer) {
+            try { $global:tsStatusTimer.Stop(); $global:tsStatusTimer.Dispose() } catch {}
+            $global:tsStatusTimer = $null
+        }
+        if ($TimeoutSeconds -gt 0) {
+            $t = New-Object System.Windows.Forms.Timer
+            $t.Interval = [int]($TimeoutSeconds * 1000)
+            $t.Add_Tick({ param($s,$e) try { $tsStatusLabel.Text = ''; $s.Stop(); $s.Dispose(); $global:tsStatusTimer = $null } catch {} })
+            $global:tsStatusTimer = $t
+            $t.Start()
+        }
+    } catch { Write-Host "Set-StatusBar failed: $($_.Exception.Message)" }
+}
+
+function Clear-StatusBar {
+    try { $tsStatusLabel.Text = ''; if ($global:tsStatusTimer) { $global:tsStatusTimer.Stop(); $global:tsStatusTimer.Dispose(); $global:tsStatusTimer = $null } } catch {}
 }
 
 # Create two group boxes: Tools and Maintenance
@@ -202,11 +234,12 @@ $btnPing.Add_Click({
     try {
         $target = $txtPing.Text
         if ([string]::IsNullOrWhiteSpace($target)) { Write-Host 'Please enter a hostname or IP in the target textbox.'; return }
-        Write-Host "Pinging $target using Test-Connection..."
-        $res = Test-Connection -ComputerName $target -Count 4 -ErrorAction Stop
-        $res | ForEach-Object { Write-Host "Reply from $($_.Address): Status=$($_.StatusCode) Time=$($_.ResponseTime)ms" }
-    # Divider after ping results
-    Write-Divider
+        $action = { 
+            Write-Host "Pinging $target using Test-Connection..."
+            $res = Test-Connection -ComputerName $target -Count 4 -ErrorAction Stop
+            $res | ForEach-Object { Write-Host "Reply from $($_.Address): Status=$($_.StatusCode) Time=$($_.ResponseTime)ms" }
+        }
+    if (Get-Command -Name Invoke-WithDivider -ErrorAction SilentlyContinue) { Invoke-WithDivider -Action $action } else { & $action }
     } catch {
         Write-Host "Ping failed: $($_.Exception.Message)"
     }
@@ -242,6 +275,8 @@ Add-ActivationButton -Parent $flowTools -Location (New-Object System.Drawing.Poi
 Add-OOSUButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,170)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 . "$PSScriptRoot\Controls\WallpaperControl.ps1"
 Add-WallpaperButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,220)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
+. "$PSScriptRoot\Controls\CheckAndFixDriversControl.ps1"
+Add-CheckAndFixDriversControl -Parent $flowTools | Out-Null
 
 # Add CheckHealth and RestoreHealth controls to the Maintenance group
 . "$PSScriptRoot\Controls\CheckHealthControl.ps1"

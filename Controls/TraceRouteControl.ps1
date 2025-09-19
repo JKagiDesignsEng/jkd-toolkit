@@ -68,16 +68,30 @@ function Add-TraceRouteButton {
             $btn.Enabled = $true
         }
     }
+    # Persist the toggle ScriptBlock on control Tags so event handlers can reliably invoke it later
+    try {
+        if ($targetBox -and ($targetBox -is [System.Windows.Forms.TextBox])) {
+            if (-not $targetBox.Tag) { $targetBox.Tag = @{} }
+            $targetBox.Tag.ToggleButtonState = $toggleButtonState
+        }
+        if ($global:txtPing -and ($global:txtPing -is [System.Windows.Forms.TextBox])) {
+            if (-not $global:txtPing.Tag) { $global:txtPing.Tag = @{} }
+            $global:txtPing.Tag.ToggleButtonState = $toggleButtonState
+        }
+    } catch { }
 
-    # Initialize state
-    & $toggleButtonState
+    # Initialize state by invoking the stored scriptblock if available, else fallback to the local block
+    try {
+        if ($targetBox -and $targetBox.Tag -and $targetBox.Tag.ToggleButtonState -is [scriptblock]) { & $targetBox.Tag.ToggleButtonState }
+        elseif ($toggleButtonState -is [scriptblock]) { & $toggleButtonState }
+    } catch { }
 
-    # Attach TextChanged handlers to both provided target box (if any) and global txtPing (if different)
+    # Attach TextChanged handlers that invoke the stored ScriptBlock from the sender.Tag to avoid closure issues
     if ($targetBox -and ($targetBox -is [System.Windows.Forms.TextBox])) {
-        $targetBox.Add_TextChanged({ & $toggleButtonState })
+        $targetBox.Add_TextChanged({ param($s,$e) if ($s.Tag -and $s.Tag.ToggleButtonState -is [scriptblock]) { & $s.Tag.ToggleButtonState } })
     }
     if (($global:txtPing) -and ($global:txtPing -is [System.Windows.Forms.TextBox]) -and ($global:txtPing -ne $targetBox)) {
-        $global:txtPing.Add_TextChanged({ & $toggleButtonState })
+        $global:txtPing.Add_TextChanged({ param($s,$e) if ($s.Tag -and $s.Tag.ToggleButtonState -is [scriptblock]) { & $s.Tag.ToggleButtonState } })
     }
 
     $btn.Add_Click({
@@ -127,6 +141,8 @@ function Add-TraceRouteButton {
             }
         } catch {
             Write-Host "TraceRoute failed: $($_.Exception.Message)"
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
         }
     })
 

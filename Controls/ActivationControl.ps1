@@ -35,26 +35,28 @@ function Add-ActivationButton {
 
     $btn.Add_Click({
         try {
-            Write-Host 'Checking activation status (slmgr /xpr)...'
-            $output = & cscript.exe //nologo "$env:windir\system32\slmgr.vbs" /xpr 2>&1
-            if ($output) { $output | ForEach-Object { Write-Host $_ } }
+            try {
+                Write-Host 'Checking activation status (slmgr /xpr)...'
+                $output = & cscript.exe //nologo "$env:windir\system32\slmgr.vbs" /xpr 2>&1
+                if ($output) { $output | ForEach-Object { Write-Host $_ } }
 
-            # Best-effort: if not activated, offer a harmless desktop flag change
-            if ($output -match 'is in an extended evaluation' -or $output -match 'Notification') {
-                Write-Host 'System appears not activated. Setting PaintDesktopVersion to 0 (harmless) as a best-effort.'
-                try {
-                    Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'PaintDesktopVersion' -Value 0 -ErrorAction Stop
-                    # Ask explorer to refresh desktop settings
-                    RUNDLL32.EXE user32.dll,UpdatePerUserSystemParameters 1, True
-                    Write-Host 'Set PaintDesktopVersion=0; desktop refresh requested.'
-                } catch {
-                    Write-Host "Failed to set PaintDesktopVersion: $($_.Exception.Message)"
+                # Best-effort: if not activated, offer a harmless desktop flag change
+                if ($output -match 'is in an extended evaluation' -or $output -match 'Notification') {
+                    Write-Host 'System appears not activated. Setting PaintDesktopVersion to 0 (harmless) as a best-effort.'
+                    try {
+                        Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'PaintDesktopVersion' -Value 0 -ErrorAction Stop
+                        # Ask explorer to refresh desktop settings
+                        RUNDLL32.EXE user32.dll,UpdatePerUserSystemParameters 1, True
+                        Write-Host 'Set PaintDesktopVersion=0; desktop refresh requested.'
+                    } catch {
+                        Write-Host "Failed to set PaintDesktopVersion: $($_.Exception.Message)"
+                    }
                 }
+            } catch {
+                Write-Host "Error checking activation: $($_.Exception.Message)"
             }
-            # Divider after activation check
-            if (Get-Command -Name Write-Divider -ErrorAction SilentlyContinue) { Write-Divider }
-        } catch {
-            Write-Host "Error checking activation: $($_.Exception.Message)"
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
         }
     })
 

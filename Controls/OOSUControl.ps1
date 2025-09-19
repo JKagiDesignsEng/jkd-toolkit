@@ -80,6 +80,8 @@ function Add-OOSUButton {
             }
         } catch {
             Write-Host "Error launching or installing O&O ShutUp2: $($_.Exception.Message)"
+        } finally {
+            if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
         }
     })
 

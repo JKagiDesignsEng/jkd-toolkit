@@ -56,9 +56,11 @@ function Add-RestoreHealthButton {
             } else {
                 Write-Host 'DISM returned no output.'
             }
-        } catch {
-            Write-Host "Error running DISM: $($_.Exception.Message)"
-        }
+    } catch {
+      Write-Host "Error running DISM: $($_.Exception.Message)"
+    } finally {
+      if (Get-Command -Name Write-AsciiDivider -ErrorAction SilentlyContinue) { Write-AsciiDivider }
+    }
     })
 
   $Parent.Controls.Add($btn)
