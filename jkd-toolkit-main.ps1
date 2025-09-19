@@ -1,1688 +1,300 @@
 <#
-Win11 Tech Toolkit — Portable PowerShell GUI
-Author: ChatGPT for Josh (JKagiDesigns / Cultivatronics)
-Purpose: A single-file, USB‑friendly GUI to troubleshoot and set up Windows 11 clients.
+jkd-toolkit-main.ps1
 
-Highlights
-- Self‑elevates to admin
-- Tabbed WinForms UI
-- One‑click repairs: SFC, DISM, WU cache reset, Print Spooler, Winsock/IP reset
-- Network tools: flush DNS, renew IP, quick connectivity test, ping
-- Maintenance: clear temp, create restore point, clean up update leftovers
-- Exports: system report, installed programs list, driver inventory
-- Launchers for common consoles (Device Manager, Event Viewer, Services, Task Manager, Windows Update)
-- All actions logged to \Logs next to this script (on the USB)
+Purpose:
+    Minimal, modular PowerShell WinForms launcher for JKD Toolkit controls. The goal is to
+    keep the main script small and to load UI controls from the `Controls\` directory by
+    dot-sourcing individual scripts. This makes individual controls (buttons, panels)
+    easier to maintain and test.
 
-Usage
-- Right‑click the .ps1 → “Run with PowerShell”
-- Or from an elevated prompt: powershell -ExecutionPolicy Bypass -File .\Win11_TechToolkit.ps1
+Elevation behavior:
+    Some control actions (for example reading Wi-Fi profile keys) require administrative
+    privileges. This script attempts to self-elevate early by re-launching PowerShell with
+    the RunAs verb. The relaunch uses `-NoExit` so console output remains visible when
+    elevated. If you prefer a non-console GUI-only run, remove `-NoExit`.
 
-Note: Some actions require an internet connection and/or may prompt for reboot.
+Console-only output policy:
+    Per project preference, the Network Password control writes SSID/password results to
+    the console (using `Write-Host`) rather than showing message boxes. If you run the
+    script by double-clicking, ensure you keep `-NoExit` during elevation or run from an
+    elevated console to see output.
+
+Controls pattern:
+    Place small control scripts under `Controls\`, each exposing a function that accepts
+    a `[System.Windows.Forms.Form]` and adds UI elements to it. Example:
+        . "$PSScriptRoot\Controls\NetworkPasswordControl.ps1"
+        Add-NetworkPasswordButton -Form $form
+
+Notes about PSScriptAnalyzer:
+    Some analyzer warnings about approved verbs were produced during iterative edits; the
+    elevation helper uses an approved verb (`Start-...`) to avoid most complaints. You can
+    further adjust analyzer rules via in-file suppression comments if desired.
 #>
 
-#region ----- Initialization & Helpers -----
 [CmdletBinding()]
 param()
 
-# Load helper functions and actions
-. "$PSScriptRoot\Toolkit.Helpers.ps1"
-. "$PSScriptRoot\Toolkit.Actions.ps1"
+# Suppress PSScriptAnalyzer rule for approved verb names here (false positive from prior edits)
+# PSScriptAnalyzer disable=PSUseApprovedVerbs
 
-# Ensure we're running as admin - pass the main script path
-Test-AdminAndElevate -MainScriptPath $MyInvocation.MyCommand.Path
-
-# Check for updates on startup (silent check)
-Start-UpdateCheck -Silent
-
-#endregion
-
-#region ----- UI (WinForms) -----
-$form                 = New-Object System.Windows.Forms.Form
-$form.Text            = "JKagiDesigns LLC Win11 Tech Toolkit v$(Get-ToolkitVersion)"
-$form.Size            = New-Object System.Drawing.Size(900, 650)
-$form.MinimumSize     = New-Object System.Drawing.Size(900, 650)
-$form.StartPosition   = 'CenterScreen'
-$form.TopMost         = $false
-
-# Set form icon if it exists
-$iconPath = "$PSScriptRoot\JKD-icon.ico"
-if (Test-Path $iconPath) {
+# Ensure running as Administrator (UAC elevation)
+function Start-Elevated {
     try {
-        $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($iconPath)
+        $wi = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $wp = New-Object Security.Principal.WindowsPrincipal($wi)
+        if (-not $wp.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            $scriptPath = $PSCommandPath
+            $argList = @('-NoProfile','-ExecutionPolicy','Bypass','-NoExit','-STA','-File',"`"$scriptPath`"")
+            Start-Process -FilePath 'powershell.exe' -ArgumentList ($argList -join ' ') -Verb RunAs | Out-Null
+            exit
+        }
     } catch {
-        # Silently continue if icon fails to load
+        Write-Warning "Failed to self-elevate: $($_.Exception.Message)"
     }
 }
 
-$tabs = New-Object System.Windows.Forms.TabControl
-$tabs.Dock = 'Fill'
-$form.Controls.Add($tabs)
-
-# Create tooltip component for helpful button explanations
-$tooltip = New-Object System.Windows.Forms.ToolTip
-$tooltip.AutoPopDelay = 10000
-$tooltip.InitialDelay = 500
-$tooltip.ReshowDelay = 500
-$tooltip.ShowAlways = $true
-
-# Status bar
-$status = New-Object System.Windows.Forms.StatusStrip
-$statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
-$statusLabel.Text = 'Ready.'
-$status.Items.Add($statusLabel) | Out-Null
-$form.Controls.Add($status)
-
-function Set-Status([string]$t){ $statusLabel.Text = $t }
-
-# --- Overview Tab ---
-$tabOverview = New-Object System.Windows.Forms.TabPage
-$tabOverview.Text = 'Overview'
-$tabs.TabPages.Add($tabOverview) | Out-Null
-
-$btnRefresh = New-Object System.Windows.Forms.Button
-$btnRefresh.Text = 'Refresh System Info'
-$btnRefresh.Size = New-Object System.Drawing.Size(160,30)
-$btnRefresh.Location = New-Object System.Drawing.Point(10,10)
-$tooltip.SetToolTip($btnRefresh, 'Collects and displays basic information about your computer like CPU, RAM, and operating system')
-
-$btnExportReport = New-Object System.Windows.Forms.Button
-$btnExportReport.Text = 'Export System Report'
-$btnExportReport.Size = New-Object System.Drawing.Size(160,30)
-$btnExportReport.Location = New-Object System.Drawing.Point(180,10)
-$tooltip.SetToolTip($btnExportReport, 'Saves your computer information to a file that you can share with tech support or keep for records')
-
-$panelInfo = New-Object System.Windows.Forms.Panel
-$panelInfo.Dock = [System.Windows.Forms.DockStyle]::Fill
-$panelInfo.Padding = New-Object System.Windows.Forms.Padding(0)
-$panelInfo.Margin = New-Object System.Windows.Forms.Padding(0)
-
-# Inner padded panel enforces a consistent 10px inset while keeping outer panel docked/responsive
-$panelInfoInner = New-Object System.Windows.Forms.Panel
-$panelInfoInner.Dock = [System.Windows.Forms.DockStyle]::Fill
-$panelInfoInner.Padding = New-Object System.Windows.Forms.Padding(10)
-$panelInfoInner.Margin = New-Object System.Windows.Forms.Padding(0)
-
-$gridInfo = New-Object System.Windows.Forms.DataGridView
-$gridInfo.Dock = [System.Windows.Forms.DockStyle]::Fill
-$gridInfo.ReadOnly = $true
-$gridInfo.AutoSizeColumnsMode = 'Fill'
-$gridInfo.RowHeadersVisible = $false
-$gridInfo.AllowUserToAddRows = $false
-$gridInfo.SelectionMode = 'FullRowSelect'
-$gridInfo.MultiSelect = $false
-$gridInfo.BackgroundColor = [System.Drawing.Color]::White
-$gridInfo.BorderStyle = 'Fixed3D'
-$gridInfo.ScrollBars = 'Both'
-$gridInfo.AutoSizeRowsMode = 'None'
-$gridInfo.ColumnHeadersHeightSizeMode = 'AutoSize'
-
-$panelInfoInner.Controls.Add($gridInfo)
-$panelInfo.Controls.Add($panelInfoInner)
-
-# Overview top panel (buttons area) - dock to top so it never overlaps the grid
-$panelInfoTop = New-Object System.Windows.Forms.Panel
-$panelInfoTop.Dock = [System.Windows.Forms.DockStyle]::Top
-$panelInfoTop.Height = 50
-$panelInfoTop.Padding = New-Object System.Windows.Forms.Padding(6)
-$panelInfoTop.Margin = New-Object System.Windows.Forms.Padding(0)
-
-# Move the overview buttons into the top panel
-$panelInfoTop.Controls.Add($btnRefresh)
-$panelInfoTop.Controls.Add($btnExportReport)
-
-# Add controls in order: top panel first, then fill panel so the grid sits below
-$tblOverview = New-Object System.Windows.Forms.TableLayoutPanel
-$tblOverview.Dock = [System.Windows.Forms.DockStyle]::Fill
-$tblOverview.RowCount = 2
-$tblOverview.ColumnCount = 1
-$tblOverview.AutoSize = $false
-$tblOverview.Margin = New-Object System.Windows.Forms.Padding(0)
-$null = $tblOverview.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
-$null = $tblOverview.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent,100)))
-$tblOverview.Controls.Add($panelInfoTop,0,0)
-$tblOverview.Controls.Add($panelInfo,0,1)
-$tabOverview.Controls.Add($tblOverview)
-
-$btnRefresh.Add_Click({
-  Set-Status 'Collecting system info...'
-  try {
-    $obj = Get-SystemInfo
-    
-    # Clear existing data and setup columns
-    $gridInfo.DataSource = $null
-    $gridInfo.Columns.Clear()
-    $gridInfo.Rows.Clear()
-    
-    # Add columns manually
-    $colProperty = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colProperty.Name = 'Property'
-    $colProperty.HeaderText = 'Property'
-    $colProperty.Width = 200
-    $gridInfo.Columns.Add($colProperty) | Out-Null
-    
-    $colValue = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colValue.Name = 'Value'
-    $colValue.HeaderText = 'Value'
-    $colValue.AutoSizeMode = 'Fill'
-    $gridInfo.Columns.Add($colValue) | Out-Null
-    
-    # Add data rows manually
-    $obj.PSObject.Properties | ForEach-Object {
-      $row = $gridInfo.Rows.Add()
-      $gridInfo.Rows[$row].Cells['Property'].Value = $_.Name
-      $gridInfo.Rows[$row].Cells['Value'].Value = $_.Value
-    }
-    
-    Set-Status "System info loaded - $($obj.PSObject.Properties.Count) properties displayed"
-  } catch {
-    Set-Status "Error: $($_.Exception.Message)"
-    # Show error in grid
-    $gridInfo.Columns.Clear()
-    $gridInfo.Rows.Clear()
-    $colError = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colError.Name = 'Error'
-    $colError.HeaderText = 'Error'
-    $colError.AutoSizeMode = 'Fill'
-    $gridInfo.Columns.Add($colError) | Out-Null
-    $row = $gridInfo.Rows.Add()
-    $gridInfo.Rows[$row].Cells['Error'].Value = $_.Exception.Message
-  }
-})
-$btnExportReport.Add_Click({
-  $p = Export-SystemReport
-  Show-ToolkitToast "Saved: `n$p" 'Export Complete'
-})
-
-# --- Network Tab ---
-$tabNet = New-Object System.Windows.Forms.TabPage
-$tabNet.Text = 'Network'
-$tabs.TabPages.Add($tabNet) | Out-Null
-
-$btnFlush = New-Object System.Windows.Forms.Button; $btnFlush.Text='Flush DNS'; $btnFlush.Size=New-Object System.Drawing.Size(120,30); $btnFlush.Location=New-Object System.Drawing.Point(10,10)
-$btnRenew = New-Object System.Windows.Forms.Button; $btnRenew.Text='Release/Renew IP'; $btnRenew.Size=New-Object System.Drawing.Size(120,30); $btnRenew.Location=New-Object System.Drawing.Point(140,10)
-$btnNetR  = New-Object System.Windows.Forms.Button; $btnNetR.Text='Winsock/IP Reset'; $btnNetR.Size=New-Object System.Drawing.Size(140,30); $btnNetR.Location=New-Object System.Drawing.Point(270,10)
-$btnTest  = New-Object System.Windows.Forms.Button; $btnTest.Text='Connectivity Test'; $btnTest.Size=New-Object System.Drawing.Size(140,30); $btnTest.Location=New-Object System.Drawing.Point(420,10)
-
-$lblHost  = New-Object System.Windows.Forms.Label;  $lblHost.Text='Ping host:'; $lblHost.Location=New-Object System.Drawing.Point(10,52); $lblHost.Size=New-Object System.Drawing.Size(70,20)
-$txtHost  = New-Object System.Windows.Forms.TextBox; $txtHost.Text='google.com'; $txtHost.Location=New-Object System.Drawing.Point(80,52); $txtHost.Size=New-Object System.Drawing.Size(200,20)
-$btnPing  = New-Object System.Windows.Forms.Button; $btnPing.Text='Ping'; $btnPing.Size=New-Object System.Drawing.Size(80,30); $btnPing.Location=New-Object System.Drawing.Point(290,50)
-
-# Add tooltips for network buttons
-$tooltip.SetToolTip($btnFlush, 'Clears your computer DNS cache - helps fix website loading problems')
-$tooltip.SetToolTip($btnRenew, 'Gets a fresh IP address from your router - fixes many connection issues')
-$tooltip.SetToolTip($btnNetR, 'Resets your network settings to defaults - fixes stubborn connection problems')
-$tooltip.SetToolTip($btnTest, 'Tests if your internet connection is working by checking several websites')
-$tooltip.SetToolTip($btnPing, 'Tests connection speed and response time to a specific website or server')
-$tooltip.SetToolTip($txtHost, 'Enter a website name (like google.com) or IP address to test connection to')
-
-$panelNet = New-Object System.Windows.Forms.Panel
-$panelNet.Dock = [System.Windows.Forms.DockStyle]::Fill
-$panelNet.Padding = New-Object System.Windows.Forms.Padding(0)
-$panelNet.Margin = New-Object System.Windows.Forms.Padding(0)
-
-# Inner padded panel enforces a consistent 10px inset while keeping outer panel docked/responsive
-$panelNetInner = New-Object System.Windows.Forms.Panel
-$panelNetInner.Dock = [System.Windows.Forms.DockStyle]::Fill
-$panelNetInner.Padding = New-Object System.Windows.Forms.Padding(10)
-$panelNetInner.Margin = New-Object System.Windows.Forms.Padding(0)
-
-$gridNet  = New-Object System.Windows.Forms.DataGridView
-$gridNet.Dock = [System.Windows.Forms.DockStyle]::Fill
-$gridNet.ReadOnly = $true
-$gridNet.AutoSizeColumnsMode = 'Fill'
-$gridNet.RowHeadersVisible = $false
-$gridNet.AllowUserToAddRows = $false
-$gridNet.SelectionMode = 'FullRowSelect'
-$gridNet.MultiSelect = $false
-$gridNet.BackgroundColor = [System.Drawing.Color]::White
-$gridNet.BorderStyle = 'Fixed3D'
-$gridNet.ScrollBars = 'Both'
-$gridNet.AutoSizeRowsMode = 'None'
-$gridNet.ColumnHeadersHeightSizeMode = 'AutoSize'
-
-$panelNetInner.Controls.Add($gridNet)
-$panelNet.Controls.Add($panelNetInner)
-
-# Network top panel - dock to top so network buttons sit above the grid and never overlap
-$panelNetTop = New-Object System.Windows.Forms.Panel
-$panelNetTop.Dock = [System.Windows.Forms.DockStyle]::Top
-$panelNetTop.Height = 80
-$panelNetTop.Padding = New-Object System.Windows.Forms.Padding(6)
-$panelNetTop.Margin = New-Object System.Windows.Forms.Padding(0)
-
-# Move the network controls into the top panel
-$panelNetTop.Controls.Add($btnFlush)
-$panelNetTop.Controls.Add($btnRenew)
-$panelNetTop.Controls.Add($btnNetR)
-$panelNetTop.Controls.Add($btnTest)
-$panelNetTop.Controls.Add($lblHost)
-$panelNetTop.Controls.Add($txtHost)
-$panelNetTop.Controls.Add($btnPing)
-
-# Add in order: top panel then fill panel
-$tblNet = New-Object System.Windows.Forms.TableLayoutPanel
-$tblNet.Dock = [System.Windows.Forms.DockStyle]::Fill
-$tblNet.RowCount = 2
-$tblNet.ColumnCount = 1
-$tblNet.AutoSize = $false
-$tblNet.Margin = New-Object System.Windows.Forms.Padding(0)
-$null = $tblNet.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
-$null = $tblNet.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent,100)))
-$tblNet.Controls.Add($panelNetTop,0,0)
-$tblNet.Controls.Add($panelNet,0,1)
-$tabNet.Controls.Add($tblNet)
-
-$btnFlush.Add_Click({ Set-Status 'Flushing DNS...'; Clear-DnsCache | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'DNS cache flushed.' })
-$btnRenew.Add_Click({ Set-Status 'Renewing IP...'; Update-IpAddress | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'IP renewed.' })
-$btnNetR.Add_Click({ Set-Status 'Resetting network...'; Reset-NetworkStack; Set-Status 'Ready.' })
-$btnTest.Add_Click({
-  Set-Status 'Running connectivity test...'
-  try {
-    $r = Test-Connectivity
-    
-    # Clear existing data and setup columns
-    $gridNet.DataSource = $null
-    $gridNet.Columns.Clear()
-    $gridNet.Rows.Clear()
-    
-    # Add columns
-    $colTest = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colTest.Name = 'Test'
-    $colTest.HeaderText = 'Test'
-    $colTest.Width = 200
-    $gridNet.Columns.Add($colTest) | Out-Null
-    
-    $colResult = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colResult.Name = 'Result'
-    $colResult.HeaderText = 'Result'
-    $colResult.AutoSizeMode = 'Fill'
-    $gridNet.Columns.Add($colResult) | Out-Null
-    
-    # Add data rows
-    $r.PSObject.Properties | ForEach-Object {
-      $rowIndex = $gridNet.Rows.Add()
-      $gridNet.Rows[$rowIndex].Cells['Test'].Value = $_.Name
-      $gridNet.Rows[$rowIndex].Cells['Result'].Value = $_.Value
-    }
-    
-    Set-Status 'Connectivity test complete'
-  } catch {
-    Set-Status "Connectivity test error: $($_.Exception.Message)"
-    $gridNet.Columns.Clear()
-    $gridNet.Rows.Clear()
-    $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $col.Name = 'Error'
-    $col.HeaderText = 'Error'
-    $col.AutoSizeMode = 'Fill'
-    $gridNet.Columns.Add($col) | Out-Null
-    $rowIndex = $gridNet.Rows.Add()
-    $gridNet.Rows[$rowIndex].Cells['Error'].Value = $_.Exception.Message
-  }
-})
-$btnPing.Add_Click({
-  $h = $txtHost.Text.Trim(); if (-not $h) { return }
-  Set-Status "Pinging $h..."
-  try {
-    $rows = Test-HostPing -TargetHost $h
-    
-    # Clear existing data and setup columns
-    $gridNet.DataSource = $null
-    $gridNet.Columns.Clear()
-    $gridNet.Rows.Clear()
-    
-    if ($rows -and $rows.Count -gt 0) {
-      # Add columns based on first row properties
-      $firstRow = $rows[0]
-      $firstRow.PSObject.Properties | ForEach-Object {
-        $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-        $col.Name = $_.Name
-        $col.HeaderText = $_.Name
-        if ($_.Name -eq 'Target') { $col.Width = 150 }
-        elseif ($_.Name -eq 'Status') { $col.Width = 100 }
-        elseif ($_.Name -eq 'ResponseTime') { $col.Width = 120 }
-        else { $col.AutoSizeMode = 'Fill' }
-        $gridNet.Columns.Add($col) | Out-Null
-      }
-      
-      # Add data rows
-      $rows | ForEach-Object {
-        $rowIndex = $gridNet.Rows.Add()
-        $currentRow = $gridNet.Rows[$rowIndex]
-        $_.PSObject.Properties | ForEach-Object {
-          $currentRow.Cells[$_.Name].Value = $_.Value
-        }
-      }
-      Set-Status "Ping complete - $($rows.Count) results for $h"
-    } else {
-      # No results - show message
-      $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-      $col.Name = 'Message'
-      $col.HeaderText = 'Result'
-      $col.AutoSizeMode = 'Fill'
-      $gridNet.Columns.Add($col) | Out-Null
-      $rowIndex = $gridNet.Rows.Add()
-      $gridNet.Rows[$rowIndex].Cells['Message'].Value = "No ping response from $h"
-      Set-Status "No ping response from $h"
-    }
-  } catch {
-    Set-Status "Ping error: $($_.Exception.Message)"
-    $gridNet.Columns.Clear()
-    $gridNet.Rows.Clear()
-    $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $col.Name = 'Error'
-    $col.HeaderText = 'Error'
-    $col.AutoSizeMode = 'Fill'
-    $gridNet.Columns.Add($col) | Out-Null
-    $rowIndex = $gridNet.Rows.Add()
-    $gridNet.Rows[$rowIndex].Cells['Error'].Value = $_.Exception.Message
-  }
-})
-
-# --- Repairs Tab ---
-$tabRep = New-Object System.Windows.Forms.TabPage
-$tabRep.Text = 'Repairs'
-$tabs.TabPages.Add($tabRep) | Out-Null
-
-$btnSFC   = New-Object System.Windows.Forms.Button; $btnSFC.Text='Run SFC'; $btnSFC.Size=New-Object System.Drawing.Size(150,40); $btnSFC.Location=New-Object System.Drawing.Point(10,10)
-$btnDISM  = New-Object System.Windows.Forms.Button; $btnDISM.Text='Run DISM RestoreHealth'; $btnDISM.Size=New-Object System.Drawing.Size(200,40); $btnDISM.Location=New-Object System.Drawing.Point(170,10)
-$btnWU    = New-Object System.Windows.Forms.Button; $btnWU.Text='Reset Windows Update Cache'; $btnWU.Size=New-Object System.Drawing.Size(230,40); $btnWU.Location=New-Object System.Drawing.Point(380,10)
-$btnSpool = New-Object System.Windows.Forms.Button; $btnSpool.Text='Restart Print Spooler'; $btnSpool.Size=New-Object System.Drawing.Size(180,40); $btnSpool.Location=New-Object System.Drawing.Point(620,10)
-
-$btnFW    = New-Object System.Windows.Forms.Button; $btnFW.Text='Reset Firewall'; $btnFW.Size=New-Object System.Drawing.Size(150,40); $btnFW.Location=New-Object System.Drawing.Point(10,60)
-
-# Add tooltips for repair buttons
-$tooltip.SetToolTip($btnSFC, 'Scans and repairs corrupted Windows system files - fixes many Windows problems')
-$tooltip.SetToolTip($btnDISM, 'Repairs the Windows image and system health - fixes deeper system corruption')
-$tooltip.SetToolTip($btnWU, 'Clears Windows Update cache - fixes stuck or failing updates')
-$tooltip.SetToolTip($btnSpool, 'Restarts the print service - fixes printing problems')
-$tooltip.SetToolTip($btnFW, 'Resets Windows Firewall to default settings - fixes firewall-related issues')
-
-$tabRep.Controls.AddRange(@($btnSFC,$btnDISM,$btnWU,$btnSpool,$btnFW))
-
-$btnSFC.Add_Click({ Set-Status 'Running SFC...'; Invoke-SFC | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'SFC completed. Review log if issues persist.' })
-$btnDISM.Add_Click({ Set-Status 'Running DISM...'; Invoke-DISM | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'DISM completed. A reboot may be needed.' })
-$btnWU.Add_Click({ Set-Status 'Resetting WU cache...'; Reset-WindowsUpdateCache | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'Windows Update cache reset.' })
-$btnSpool.Add_Click({ Set-Status 'Restarting Print Spooler...'; Restart-PrintSpooler | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'Print Spooler restarted.' })
-$btnFW.Add_Click({ Set-Status 'Resetting Firewall...'; Reset-WindowsFirewall | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'Firewall reset to defaults.' })
-
-# --- Maintenance Tab ---
-$tabMaint = New-Object System.Windows.Forms.TabPage
-$tabMaint.Text = 'Maintenance'
-$tabs.TabPages.Add($tabMaint) | Out-Null
-
-$btnTemp   = New-Object System.Windows.Forms.Button; $btnTemp.Text='Clear Temp Files'; $btnTemp.Size=New-Object System.Drawing.Size(160,40); $btnTemp.Location=New-Object System.Drawing.Point(10,10)
-$btnRP     = New-Object System.Windows.Forms.Button; $btnRP.Text='Create Restore Point'; $btnRP.Size=New-Object System.Drawing.Size(180,40); $btnRP.Location=New-Object System.Drawing.Point(180,10)
-$btnExpApps= New-Object System.Windows.Forms.Button; $btnExpApps.Text='Export Installed Programs'; $btnExpApps.Size=New-Object System.Drawing.Size(210,40); $btnExpApps.Location=New-Object System.Drawing.Point(370,10)
-$btnDrv    = New-Object System.Windows.Forms.Button; $btnDrv.Text='Export Driver Inventory'; $btnDrv.Size=New-Object System.Drawing.Size(200,40); $btnDrv.Location=New-Object System.Drawing.Point(590,10)
-
-# Privacy & Debloating section
-$lblPrivacy = New-Object System.Windows.Forms.Label; $lblPrivacy.Text='Privacy & Debloating Tools:'; $lblPrivacy.Location=New-Object System.Drawing.Point(10,70); $lblPrivacy.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblPrivacy.Size=New-Object System.Drawing.Size(180,20)
-$btnShutUp = New-Object System.Windows.Forms.Button; $btnShutUp.Text='O&O ShutUp10++'; $btnShutUp.Size=New-Object System.Drawing.Size(160,40); $btnShutUp.Location=New-Object System.Drawing.Point(10,90)
-$btnPrivacyFix = New-Object System.Windows.Forms.Button; $btnPrivacyFix.Text='Windows Privacy Fix'; $btnPrivacyFix.Size=New-Object System.Drawing.Size(180,40); $btnPrivacyFix.Location=New-Object System.Drawing.Point(180,90)
-$btnDebloat = New-Object System.Windows.Forms.Button; $btnDebloat.Text='Windows Debloater'; $btnDebloat.Size=New-Object System.Drawing.Size(180,40); $btnDebloat.Location=New-Object System.Drawing.Point(370,90)
-
-# Customization section
-$lblCustomization = New-Object System.Windows.Forms.Label; $lblCustomization.Text='Windows Customization:'; $lblCustomization.Location=New-Object System.Drawing.Point(10,150); $lblCustomization.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblCustomization.Size=New-Object System.Drawing.Size(180,20)
-$btnDarkMode = New-Object System.Windows.Forms.Button; $btnDarkMode.Text='Toggle Dark Mode'; $btnDarkMode.Size=New-Object System.Drawing.Size(160,40); $btnDarkMode.Location=New-Object System.Drawing.Point(10,170)
-$btnWSL = New-Object System.Windows.Forms.Button; $btnWSL.Text='Install WSL'; $btnWSL.Size=New-Object System.Drawing.Size(120,40); $btnWSL.Location=New-Object System.Drawing.Point(180,170)
-$btnWallpaper = New-Object System.Windows.Forms.Button; $btnWallpaper.Text='Set Custom Wallpaper'; $btnWallpaper.Size=New-Object System.Drawing.Size(180,40); $btnWallpaper.Location=New-Object System.Drawing.Point(310,170)
-
-$tabMaint.Controls.AddRange(@($btnTemp,$btnRP,$btnExpApps,$btnDrv,$lblPrivacy,$btnShutUp,$btnPrivacyFix,$btnDebloat,$lblCustomization,$btnDarkMode,$btnWSL,$btnWallpaper))
-
-$tooltip.SetToolTip($btnTemp, 'Deletes temporary files to free up disk space and improve performance')
-$btnTemp.Add_Click({ Set-Status 'Clearing temp files...'; Clear-TempFiles | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'Temp files cleared.' })
-$tooltip.SetToolTip($btnRP, 'Creates a backup snapshot of your system settings and files')
-$btnRP.Add_Click({ Set-Status 'Creating restore point...'; Checkpoint-SystemRestore | Out-Null; Set-Status 'Ready.'; Show-ToolkitToast 'Restore point created.' })
-$tooltip.SetToolTip($btnExpApps, 'Creates a list of all installed software and saves it to your desktop')
-$tooltip.SetToolTip($btnExpApps, 'Creates a list of all installed software and saves it to your desktop')
-$btnExpApps.Add_Click({ Set-Status 'Exporting programs...'; Export-InstalledPrograms | Out-Null; Set-Status 'Programs exported'; Show-ToolkitToast 'Installed programs list has been exported to desktop.' })
-$tooltip.SetToolTip($btnDrv, 'Creates a list of all installed device drivers and saves it to your desktop')
-$tooltip.SetToolTip($btnDrv, 'Creates a list of all installed device drivers and saves it to your desktop')
-$btnDrv.Add_Click({ Set-Status 'Exporting drivers...'; Export-DriverInventory | Out-Null; Set-Status 'Drivers exported'; Show-ToolkitToast 'Driver inventory has been exported to desktop.' })
-
-# Privacy tools tooltips and event handlers
-$tooltip.SetToolTip($btnShutUp, 'Downloads and runs O&O ShutUp10++ - comprehensive Windows privacy tool')
-$btnShutUp.Add_Click({ Set-Status 'Launching O&O ShutUp10++...'; Start-PrivacyTool 'ShutUp10'; Set-Status 'Ready.' })
-$tooltip.SetToolTip($btnPrivacyFix, 'Applies common Windows privacy settings and disables telemetry')
-$btnPrivacyFix.Add_Click({ Set-Status 'Applying privacy fixes...'; Start-PrivacyTool 'PrivacyFix'; Set-Status 'Privacy fixes applied'; Show-ToolkitToast 'Windows privacy settings have been applied.' })
-$tooltip.SetToolTip($btnDebloat, 'Removes common Windows bloatware and unnecessary apps')
-$btnDebloat.Add_Click({ Set-Status 'Debloating Windows...'; Start-PrivacyTool 'Debloat'; Set-Status 'Debloating complete'; Show-ToolkitToast 'Windows debloating completed successfully.' })
-
-# Customization tools tooltips and event handlers
-$tooltip.SetToolTip($btnDarkMode, 'Toggles between Windows Dark Mode and Light Mode themes')
-$btnDarkMode.Add_Click({ Set-Status 'Toggling Dark Mode...'; Start-CustomizationTool 'DarkMode'; Set-Status 'Dark Mode toggled' })
-$tooltip.SetToolTip($btnWSL, 'Installs Windows Subsystem for Linux (WSL) with Ubuntu')
-$btnWSL.Add_Click({ Set-Status 'Installing WSL...'; Start-CustomizationTool 'WSL'; Set-Status 'WSL installation initiated' })
-$tooltip.SetToolTip($btnWallpaper, 'Browse and set a custom desktop wallpaper image')
-$btnWallpaper.Add_Click({ Set-Status 'Setting wallpaper...'; Start-CustomizationTool 'Wallpaper'; Set-Status 'Ready.' })
-
-# --- Setup & Install Tab ---
-$tabSetup = New-Object System.Windows.Forms.TabPage
-$tabSetup.Text = "Setup & Install"
-$tabs.TabPages.Add($tabSetup) | Out-Null
-
-# Driver and Windows Setup section
-$lblDrivers = New-Object System.Windows.Forms.Label; $lblDrivers.Text='System Setup:'; $lblDrivers.Location=New-Object System.Drawing.Point(10,10); $lblDrivers.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblDrivers.Size=New-Object System.Drawing.Size(120,20)
-$btnMissingDrivers = New-Object System.Windows.Forms.Button; $btnMissingDrivers.Text='Scan & Install Drivers'; $btnMissingDrivers.Size=New-Object System.Drawing.Size(180,30); $btnMissingDrivers.Location=New-Object System.Drawing.Point(10,30); $btnMissingDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnFeatures = New-Object System.Windows.Forms.Button; $btnFeatures.Text='Install Win Features'; $btnFeatures.Size=New-Object System.Drawing.Size(160,30); $btnFeatures.Location=New-Object System.Drawing.Point(200,30); $btnFeatures.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnOptimize = New-Object System.Windows.Forms.Button; $btnOptimize.Text='Optimize Performance'; $btnOptimize.Size=New-Object System.Drawing.Size(160,30); $btnOptimize.Location=New-Object System.Drawing.Point(370,30); $btnOptimize.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-
-# Package Manager section
-$lblPkgMgr = New-Object System.Windows.Forms.Label; $lblPkgMgr.Text='Package Managers:'; $lblPkgMgr.Location=New-Object System.Drawing.Point(10,80); $lblPkgMgr.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblPkgMgr.Size=New-Object System.Drawing.Size(150,20)
-$btnWinGet = New-Object System.Windows.Forms.Button; $btnWinGet.Text='Install WinGet'; $btnWinGet.Size=New-Object System.Drawing.Size(110,30); $btnWinGet.Location=New-Object System.Drawing.Point(10,100); $btnWinGet.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnWinGetUninstall = New-Object System.Windows.Forms.Button; $btnWinGetUninstall.Text='Uninstall WinGet'; $btnWinGetUninstall.Size=New-Object System.Drawing.Size(110,30); $btnWinGetUninstall.Location=New-Object System.Drawing.Point(10,100); $btnWinGetUninstall.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnWinGetUninstall.Visible=$false
-$btnChoco = New-Object System.Windows.Forms.Button; $btnChoco.Text='Install Chocolatey'; $btnChoco.Size=New-Object System.Drawing.Size(120,30); $btnChoco.Location=New-Object System.Drawing.Point(140,100); $btnChoco.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnChocoUninstall = New-Object System.Windows.Forms.Button; $btnChocoUninstall.Text='Uninstall Chocolatey'; $btnChocoUninstall.Size=New-Object System.Drawing.Size(120,30); $btnChocoUninstall.Location=New-Object System.Drawing.Point(140,100); $btnChocoUninstall.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnChocoUninstall.Visible=$false
-
-# Package Search section
-$lblSearch = New-Object System.Windows.Forms.Label; $lblSearch.Text='Search for Applications:'; $lblSearch.Location=New-Object System.Drawing.Point(10,150); $lblSearch.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblSearch.Size=New-Object System.Drawing.Size(170,20)
-
-# Search controls
-$lblSearchBox = New-Object System.Windows.Forms.Label; $lblSearchBox.Text='Search:'; $lblSearchBox.Location=New-Object System.Drawing.Point(10,180); $lblSearchBox.Size=New-Object System.Drawing.Size(50,20)
-$txtSearch = New-Object System.Windows.Forms.TextBox; $txtSearch.Location=New-Object System.Drawing.Point(70,178); $txtSearch.Size=New-Object System.Drawing.Size(200,22); $txtSearch.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnSearch = New-Object System.Windows.Forms.Button; $btnSearch.Text='Search'; $btnSearch.Size=New-Object System.Drawing.Size(80,25); $btnSearch.Location=New-Object System.Drawing.Point(280,177); $btnSearch.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-
-# Package manager selection for search
-$lblPkgSelect = New-Object System.Windows.Forms.Label; $lblPkgSelect.Text='Search in:'; $lblPkgSelect.Location=New-Object System.Drawing.Point(380,180); $lblPkgSelect.Size=New-Object System.Drawing.Size(70,20)
-$radioPkgWinGet = New-Object System.Windows.Forms.RadioButton; $radioPkgWinGet.Text='WinGet'; $radioPkgWinGet.Location=New-Object System.Drawing.Point(460,178); $radioPkgWinGet.Size=New-Object System.Drawing.Size(80,20); $radioPkgWinGet.Checked=$true
-$radioPkgChoco = New-Object System.Windows.Forms.RadioButton; $radioPkgChoco.Text='Chocolatey'; $radioPkgChoco.Location=New-Object System.Drawing.Point(550,178); $radioPkgChoco.Size=New-Object System.Drawing.Size(100,20)
-
-# Install button for search results
-$btnInstallSelected = New-Object System.Windows.Forms.Button; $btnInstallSelected.Text='Install Selected'; $btnInstallSelected.Size=New-Object System.Drawing.Size(140,30); $btnInstallSelected.Location=New-Object System.Drawing.Point(170,270); $btnInstallSelected.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnInstallSelected.Enabled=$false; $btnInstallSelected.Visible=$false
-
-# Application Management section (shared between search and uninstall)
-$lblAppManagement = New-Object System.Windows.Forms.Label; $lblAppManagement.Text='Application Management:'; $lblAppManagement.Location=New-Object System.Drawing.Point(10,250); $lblAppManagement.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblAppManagement.Size=New-Object System.Drawing.Size(180,20)
-$btnShowSearch = New-Object System.Windows.Forms.Button; $btnShowSearch.Text='Show Search Results'; $btnShowSearch.Size=New-Object System.Drawing.Size(150,30); $btnShowSearch.Location=New-Object System.Drawing.Point(10,270); $btnShowSearch.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnShowSearch.Visible=$false
-$btnRefreshApps = New-Object System.Windows.Forms.Button; $btnRefreshApps.Text='Show Installed Apps'; $btnRefreshApps.Size=New-Object System.Drawing.Size(145,30); $btnRefreshApps.Location=New-Object System.Drawing.Point(10,270); $btnRefreshApps.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnUninstallSelected = New-Object System.Windows.Forms.Button; $btnUninstallSelected.Text='Uninstall Selected'; $btnUninstallSelected.Size=New-Object System.Drawing.Size(140,30); $btnUninstallSelected.Location=New-Object System.Drawing.Point(170,270); $btnUninstallSelected.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnUninstallSelected.Visible=$false
-$btnClearSelection = New-Object System.Windows.Forms.Button; $btnClearSelection.Text='Clear Selection'; $btnClearSelection.Size=New-Object System.Drawing.Size(120,30); $btnClearSelection.Location=New-Object System.Drawing.Point(320,270); $btnClearSelection.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-
-
-$panelApps = New-Object System.Windows.Forms.Panel
-$panelApps.Dock = [System.Windows.Forms.DockStyle]::Fill
-$panelApps.Padding = New-Object System.Windows.Forms.Padding(0)
-$panelApps.Margin = New-Object System.Windows.Forms.Padding(0)
-
-# Inner padded panel enforces a consistent 10px inset while keeping outer panel docked/responsive
-$panelAppsInner = New-Object System.Windows.Forms.Panel
-$panelAppsInner.Dock = [System.Windows.Forms.DockStyle]::Fill
-$panelAppsInner.Padding = New-Object System.Windows.Forms.Padding(10)
-$panelAppsInner.Margin = New-Object System.Windows.Forms.Padding(0)
-
-# Shared apps grid (used for both search results and installed apps)
-$gridApps = New-Object System.Windows.Forms.DataGridView
-$gridApps.Dock = [System.Windows.Forms.DockStyle]::Fill
-$gridApps.ReadOnly = $true
-$gridApps.AutoSizeColumnsMode = 'Fill'
-$gridApps.RowHeadersVisible = $false
-$gridApps.AllowUserToAddRows = $false
-$gridApps.SelectionMode = 'FullRowSelect'
-$gridApps.MultiSelect = $true
-$gridApps.BackgroundColor = [System.Drawing.Color]::White
-$gridApps.BorderStyle = 'Fixed3D'
-$gridApps.ScrollBars = 'Both'
-$gridApps.AutoSizeRowsMode = 'None'
-$gridApps.ColumnHeadersHeightSizeMode = 'AutoSize'
-
-$panelAppsInner.Controls.Add($gridApps)
-$panelApps.Controls.Add($panelAppsInner)
-
-# Variable to track current mode
-$script:currentMode = 'installed'  # 'search' or 'installed'
-$global:searchResults = @()
-$global:InstalledApps = @()
-
-# Top panel for Setup tab (restore original layout)
-$panelSetupTop = New-Object System.Windows.Forms.Panel
-$panelSetupTop.Dock = [System.Windows.Forms.DockStyle]::Top
-$panelSetupTop.Height = 320
-$panelSetupTop.Padding = New-Object System.Windows.Forms.Padding(6)
-$panelSetupTop.Margin = New-Object System.Windows.Forms.Padding(0)
-
-# Move setup controls into the top panel (keeps them above the apps grid)
-$panelSetupTop.Controls.AddRange(@($lblDrivers,$btnMissingDrivers,$btnFeatures,$btnOptimize,$lblPkgMgr,$btnWinGet,$btnWinGetUninstall,$btnChoco,$btnChocoUninstall,$lblSearch,$lblSearchBox,$txtSearch,$btnSearch,$lblPkgSelect,$radioPkgWinGet,$radioPkgChoco,$btnInstallSelected,$lblAppManagement,$btnShowSearch,$btnRefreshApps,$btnUninstallSelected,$btnClearSelection))
-
-# Add top panel first, then the fill panel so the apps grid does not overlap controls
-$tblSetup = New-Object System.Windows.Forms.TableLayoutPanel
-$tblSetup.Dock = [System.Windows.Forms.DockStyle]::Fill
-$tblSetup.RowCount = 2
-$tblSetup.ColumnCount = 1
-$tblSetup.AutoSize = $false
-$tblSetup.Margin = New-Object System.Windows.Forms.Padding(0)
-$null = $tblSetup.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
-$null = $tblSetup.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent,100)))
-$tblSetup.Controls.Add($panelSetupTop,0,0)
-$tblSetup.Controls.Add($panelApps,0,1)
-$tabSetup.Controls.Add($tblSetup)
-
-# Event handlers for Setup tab
-$tooltip.SetToolTip($btnMissingDrivers, 'Scans for missing/outdated drivers and provides installation options via Windows Update or Device Manager')
-$btnMissingDrivers.Add_Click({ Set-Status 'Scanning for missing drivers...'; Find-MissingDrivers; Set-Status 'Driver scan complete' })
-$tooltip.SetToolTip($btnFeatures, 'Installs useful Windows components like .NET Framework and Media Features')
-$btnFeatures.Add_Click({ Set-Status 'Installing Windows features...'; Install-WindowsFeatures | Out-Null; Set-Status 'Features installation complete'; Show-ToolkitToast 'Windows features installation complete. Restart may be required.' })
-$tooltip.SetToolTip($btnOptimize, 'Applies Windows settings tweaks to improve system speed and responsiveness')
-$btnOptimize.Add_Click({ Set-Status 'Optimizing performance...'; Optimize-WindowsPerformance | Out-Null; Set-Status 'Performance optimization complete'; Show-ToolkitToast 'Windows performance optimization complete.' })
-
-# Function to update package manager button states
-# Helper functions for mode switching
-function Switch-ToSearchMode {
-  $script:currentMode = 'search'
-  $btnShowSearch.Visible = $false
-  $btnRefreshApps.Visible = $true
-  $btnRefreshApps.Text = 'Show Installed Apps'
-  $btnInstallSelected.Visible = $true
-  $btnUninstallSelected.Visible = $false
-  $gridApps.MultiSelect = $true
-  $lblAppManagement.Text = 'Search Results:'
-}
-
-function Switch-ToInstalledMode {
-  $script:currentMode = 'installed'
-  $btnShowSearch.Visible = $true
-  $btnRefreshApps.Visible = $true
-  $btnRefreshApps.Text = 'Refresh Installed Apps'
-  $btnInstallSelected.Visible = $false
-  $btnUninstallSelected.Visible = $true
-  $gridApps.MultiSelect = $true
-  $lblAppManagement.Text = 'Installed Applications:'
-}
-
-function Update-PackageManagerButtons {
-  $wingetInstalled = Test-PackageManager 'winget'
-  $chocoInstalled = Test-PackageManager 'choco'
-  
-  # WinGet buttons
-  if ($wingetInstalled) {
-    $btnWinGet.Visible = $false
-    $btnWinGetUninstall.Visible = $true
-    $radioPkgWinGet.Enabled = $true
-  } else {
-    $btnWinGet.Visible = $true
-    $btnWinGetUninstall.Visible = $false
-    $radioPkgWinGet.Enabled = $false
-    if ($radioPkgWinGet.Checked -and $chocoInstalled) { $radioPkgChoco.Checked = $true }
-  }
-  
-  # Chocolatey buttons
-  if ($chocoInstalled) {
-    $btnChoco.Visible = $false
-    $btnChocoUninstall.Visible = $true
-    $radioPkgChoco.Enabled = $true
-  } else {
-    $btnChoco.Visible = $true
-    $btnChocoUninstall.Visible = $false
-    $radioPkgChoco.Enabled = $false
-    if ($radioPkgChoco.Checked -and $wingetInstalled) { $radioPkgWinGet.Checked = $true }
-  }
-  
-  # Update search and install availability
-  $hasAnyPackageManager = ($wingetInstalled -or $chocoInstalled)
-  $btnSearch.Enabled = $hasAnyPackageManager
-  $btnInstallSelected.Enabled = ($hasAnyPackageManager -and $script:currentMode -eq 'search')
-  
-  # If no package managers available, clear search results
-  if (-not $hasAnyPackageManager) {
-    if ($script:currentMode -eq 'search') {
-      $gridApps.Columns.Clear()
-      $gridApps.Rows.Clear()
-    }
-  }
-}
-
-$tooltip.SetToolTip($btnWinGet, 'Installs Microsoft WinGet - a modern package manager for installing software')
-$btnWinGet.Add_Click({ 
-  Set-Status 'Installing WinGet...'
-  Install-PackageManager 'winget' | Out-Null
-  Set-Status 'WinGet installation complete'
-  Show-ToolkitToast 'WinGet package manager ready.'
-  Update-PackageManagerButtons
-})
-
-$tooltip.SetToolTip($btnWinGetUninstall, 'Removes Microsoft WinGet package manager from your system')
-$btnWinGetUninstall.Add_Click({
-  $confirmation = [System.Windows.Forms.MessageBox]::Show(
-    'Are you sure you want to uninstall WinGet package manager?',
-    'Confirm Uninstall',
-    [System.Windows.Forms.MessageBoxButtons]::YesNo,
-    [System.Windows.Forms.MessageBoxIcon]::Warning
-  )
-  if ($confirmation -eq [System.Windows.Forms.DialogResult]::Yes) {
-    Set-Status 'Uninstalling WinGet...'
-    Uninstall-PackageManager 'winget' | Out-Null
-    Set-Status 'WinGet uninstalled'
-    Show-ToolkitToast 'WinGet package manager has been removed.'
-    Update-PackageManagerButtons
-  }
-})
-
-$tooltip.SetToolTip($btnChoco, 'Installs Chocolatey - a popular package manager for Windows software installation')
-$btnChoco.Add_Click({ 
-  Set-Status 'Installing Chocolatey...'
-  Install-PackageManager 'choco' | Out-Null
-  Set-Status 'Chocolatey installation complete'
-  Show-ToolkitToast 'Chocolatey package manager installed.'
-  Update-PackageManagerButtons
-})
-
-$tooltip.SetToolTip($btnChocoUninstall, 'Removes Chocolatey package manager from your system')
-$btnChocoUninstall.Add_Click({
-  $confirmation = [System.Windows.Forms.MessageBox]::Show(
-    'Are you sure you want to uninstall Chocolatey package manager?',
-    'Confirm Uninstall',
-    [System.Windows.Forms.MessageBoxButtons]::YesNo,
-    [System.Windows.Forms.MessageBoxIcon]::Warning
-  )
-  if ($confirmation -eq [System.Windows.Forms.DialogResult]::Yes) {
-    Set-Status 'Uninstalling Chocolatey...'
-    Uninstall-PackageManager 'choco' | Out-Null
-    Set-Status 'Chocolatey uninstalled'
-    Show-ToolkitToast 'Chocolatey package manager has been removed.'
-    Update-PackageManagerButtons
-  }
-})
-
-# Add tooltips for search controls
-$tooltip.SetToolTip($txtSearch, 'Enter the name of the software you want to find (e.g., "firefox", "steam", "vscode")')
-$tooltip.SetToolTip($btnSearch, 'Search for packages in the selected package manager repository')
-$tooltip.SetToolTip($radioPkgWinGet, 'Search Microsoft WinGet repository (built into Windows 11)')
-$tooltip.SetToolTip($radioPkgChoco, 'Search Chocolatey repository (community packages)')
-$tooltip.SetToolTip($gridApps, 'Select packages/applications from the list, then use Install Selected or Uninstall Selected buttons')
-
-# Search event handlers
-$btnSearch.Add_Click({
-  $searchTerm = $txtSearch.Text.Trim()
-  if ([string]::IsNullOrEmpty($searchTerm)) {
-    Show-ToolkitToast 'Please enter a search term' 'Search Required'
-    return
-  }
-  
-  $packageManager = if ($radioPkgWinGet.Checked) { 'winget' } else { 'choco' }
-  
-  # Check if selected package manager is available
-  if (-not (Test-PackageManager $packageManager)) {
-    Show-ToolkitToast "$packageManager is not installed. Please install it first." 'Package Manager Not Found'
-    return
-  }
-  
-  Set-Status "Searching $packageManager for '$searchTerm'..."
-  try {
-    $searchResults = Search-PackageManager -SearchTerm $searchTerm -PackageManager $packageManager
-    $global:searchResults = $searchResults
-    
-    # Switch to search mode
-    Switch-ToSearchMode
-    
-    # Clear existing data and setup columns
-    $gridApps.DataSource = $null
-    $gridApps.Columns.Clear()
-    $gridApps.Rows.Clear()
-    
-    if ($searchResults -and $searchResults.Count -gt 0) {
-      # Add columns based on first result properties
-      $firstResult = $searchResults[0]
-      $firstResult.PSObject.Properties | ForEach-Object {
-        $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-        $col.Name = $_.Name
-        $col.HeaderText = $_.Name
-        
-        # Set column widths based on content type
-        switch ($_.Name) {
-          'Id' { $col.Width = 150 }
-          'Name' { $col.Width = 200 }
-          'Version' { $col.Width = 100 }
-          'Source' { $col.Width = 100 }
-          default { $col.AutoSizeMode = 'Fill' }
-        }
-        $gridApps.Columns.Add($col) | Out-Null
-      }
-      
-      # Add data rows
-      $searchResults | ForEach-Object {
-        $rowIndex = $gridApps.Rows.Add()
-        $currentRow = $gridApps.Rows[$rowIndex]
-        $_.PSObject.Properties | ForEach-Object {
-          $currentRow.Cells[$_.Name].Value = $_.Value
-        }
-      }
-      
-      $btnInstallSelected.Enabled = $true
-      Set-Status "Found $($searchResults.Count) packages for '$searchTerm'"
-    } else {
-      # No results found
-      $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-      $col.Name = 'Message'
-      $col.HeaderText = 'Search Results'
-      $col.AutoSizeMode = 'Fill'
-      $gridApps.Columns.Add($col) | Out-Null
-      $rowIndex = $gridApps.Rows.Add()
-      $gridApps.Rows[$rowIndex].Cells['Message'].Value = "No packages found for '$searchTerm' in $packageManager"
-      
-      $btnInstallSelected.Enabled = $false
-      Set-Status "No packages found for '$searchTerm'"
-    }
-  } catch {
-    Set-Status "Search error: $($_.Exception.Message)"
-    $gridApps.Columns.Clear()
-    $gridApps.Rows.Clear()
-    $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $col.Name = 'Error'
-    $col.HeaderText = 'Error'
-    $col.AutoSizeMode = 'Fill'
-    $gridApps.Columns.Add($col) | Out-Null
-    $rowIndex = $gridApps.Rows.Add()
-    $gridApps.Rows[$rowIndex].Cells['Error'].Value = $_.Exception.Message
-    $btnInstallSelected.Enabled = $false
-  }
-})
-
-# Allow Enter key to trigger search
-$txtSearch.Add_KeyDown({
-  if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
-    $btnSearch.PerformClick()
-  }
-})
-$tooltip.SetToolTip($btnInstallSelected, 'Installs the selected packages from search results using the chosen package manager')
-$btnInstallSelected.Add_Click({
-  if ($script:currentMode -ne 'search') {
-    Show-ToolkitToast 'Please perform a search first to see available packages.' 'No Search Results'
-    return
-  }
-  
-  $selectedRows = $gridApps.SelectedRows
-  if ($selectedRows.Count -eq 0) {
-    Show-ToolkitToast 'Please select at least one package from the search results.' 'No Selection'
-    return
-  }
-  
-  $packageManager = if ($radioPkgWinGet.Checked) { 'winget' } else { 'choco' }
-  $selectedPackages = @()
-  
-  foreach ($row in $selectedRows) {
-    $packageId = $row.Cells['Id'].Value
-    $packageName = $row.Cells['Name'].Value
-    if ($packageId) {
-      $selectedPackages += [PSCustomObject]@{
-        Id = $packageId
-        Name = $packageName
-      }
-    }
-  }
-  
-  if ($selectedPackages.Count -eq 0) {
-    Show-ToolkitToast 'No valid packages selected.' 'Invalid Selection'
-    return
-  }
-  
-  Set-Status "Installing $($selectedPackages.Count) packages via $packageManager..."
-  
-  foreach ($package in $selectedPackages) {
-    Install-Application -AppName $package.Id -PackageManager $packageManager -DisplayName $package.Name
-  }
-  
-  Set-Status 'Package installation complete'
-  Show-ToolkitToast "Installation of $($selectedPackages.Count) packages completed via $packageManager." 'Installation Complete'
-})
-
-# Mode switching event handlers
-$btnShowSearch.Add_Click({
-  if ($global:searchResults -and $global:searchResults.Count -gt 0) {
-    Switch-ToSearchMode
-    
-    # Redisplay search results
-    $gridApps.DataSource = $null
-    $gridApps.Columns.Clear()
-    $gridApps.Rows.Clear()
-    
-    $firstResult = $global:searchResults[0]
-    $firstResult.PSObject.Properties | ForEach-Object {
-      $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-      $col.Name = $_.Name
-      $col.HeaderText = $_.Name
-      
-      switch ($_.Name) {
-        'Id' { $col.Width = 150 }
-        'Name' { $col.Width = 200 }
-        'Version' { $col.Width = 100 }
-        'Source' { $col.Width = 100 }
-        default { $col.AutoSizeMode = 'Fill' }
-      }
-      $gridApps.Columns.Add($col) | Out-Null
-    }
-    
-    $global:searchResults | ForEach-Object {
-      $rowIndex = $gridApps.Rows.Add()
-      $currentRow = $gridApps.Rows[$rowIndex]
-      $_.PSObject.Properties | ForEach-Object {
-        $currentRow.Cells[$_.Name].Value = $_.Value
-      }
-    }
-    
-    Set-Status "Showing $($global:searchResults.Count) search results"
-  } else {
-    Show-ToolkitToast 'No search results available. Please perform a search first.' 'No Search Results'
-  }
-})
-
-# Uninstall event handlers
-$tooltip.SetToolTip($btnRefreshApps, 'Scans your computer for all installed programs that can be uninstalled')
-$btnRefreshApps.Add_Click({
-  if ($script:currentMode -eq 'search') {
-    # Switch to installed mode
-    Switch-ToInstalledMode
-  }
-  
-  Set-Status 'Loading installed applications...'
-  try {
-    $global:InstalledApps = Get-InstalledApplications
-    
-    # Clear and setup grid for installed apps
-    $gridApps.DataSource = $null
-    $gridApps.Columns.Clear()
-    $gridApps.Rows.Clear()
-    
-    if ($global:InstalledApps -and $global:InstalledApps.Count -gt 0) {
-      # Add columns for installed apps
-      $colName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-      $colName.Name = 'Name'
-      $colName.HeaderText = 'Application Name'
-      $colName.Width = 300
-      $gridApps.Columns.Add($colName) | Out-Null
-      
-      $colVersion = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-      $colVersion.Name = 'Version'
-      $colVersion.HeaderText = 'Version'
-      $colVersion.Width = 120
-      $gridApps.Columns.Add($colVersion) | Out-Null
-      
-      $colSource = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-      $colSource.Name = 'Source'
-      $colSource.HeaderText = 'Source'
-      $colSource.Width = 100
-      $gridApps.Columns.Add($colSource) | Out-Null
-      
-      $colPublisher = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-      $colPublisher.Name = 'Publisher'
-      $colPublisher.HeaderText = 'Publisher'
-      $colPublisher.AutoSizeMode = 'Fill'
-      $gridApps.Columns.Add($colPublisher) | Out-Null
-      
-      # Add data rows
-      foreach ($app in $global:InstalledApps) {
-        $rowIndex = $gridApps.Rows.Add()
-        $gridApps.Rows[$rowIndex].Cells['Name'].Value = $app.Name
-        $gridApps.Rows[$rowIndex].Cells['Version'].Value = $app.Version
-        $gridApps.Rows[$rowIndex].Cells['Source'].Value = $app.Source
-        $gridApps.Rows[$rowIndex].Cells['Publisher'].Value = $app.Publisher
-      }
-    }
-    
-    Set-Status "Found $($global:InstalledApps.Count) installed applications"
-    Show-ToolkitToast "Found $($global:InstalledApps.Count) installed applications" 'Scan Complete'
-  } catch {
-    Set-Status "Error loading applications: $($_.Exception.Message)"
-    Show-ToolkitToast "Error loading applications: $($_.Exception.Message)" 'Error'
-  }
-})
-
-$tooltip.SetToolTip($btnUninstallSelected, 'Removes the selected programs from your computer (use with caution)')
-$btnUninstallSelected.Add_Click({
-  if ($script:currentMode -ne 'installed') {
-    Show-ToolkitToast 'Please refresh installed applications first.' 'No Installed Apps'
-    return
-  }
-  
-  $selectedRows = $gridApps.SelectedRows
-  if ($selectedRows.Count -eq 0) {
-    Show-ToolkitToast 'Please select at least one application to uninstall.' 'No Selection'
-    return
-  }
-  
-  # Get selected applications
-  $selectedItems = @()
-  foreach ($row in $selectedRows) {
-    $appName = $row.Cells['Name'].Value
-    $selectedApp = $global:InstalledApps | Where-Object { $_.Name -eq $appName } | Select-Object -First 1
-    if ($selectedApp) {
-      $selectedItems += $selectedApp
-    }
-  }
-  
-  if ($selectedItems.Count -eq 0) {
-    Show-ToolkitToast 'No valid applications selected.' 'Invalid Selection'
-    return
-  }
-  
-  # Confirmation dialog
-  $appNames = ($selectedItems | ForEach-Object { $_.Name }) -join "`n"
-  $confirmation = [System.Windows.Forms.MessageBox]::Show(
-    "Are you sure you want to uninstall the following $($selectedItems.Count) application(s)?`n`n$appNames`n`nThis action cannot be undone.",
-    'Confirm Uninstall',
-    [System.Windows.Forms.MessageBoxButtons]::YesNo,
-    [System.Windows.Forms.MessageBoxIcon]::Warning
-  )
-  
-  if ($confirmation -eq [System.Windows.Forms.DialogResult]::Yes) {
-    Set-Status "Uninstalling $($selectedItems.Count) applications..."
-    
-    try {
-      $result = Uninstall-SelectedApplications -Applications $selectedItems -Silent
-      
-      Set-Status 'Uninstall process complete'
-      Show-ToolkitToast "Uninstall complete!`nSuccess: $($result.Success)`nFailed: $($result.Failed)`nTotal: $($result.Total)" 'Uninstall Complete'
-      
-      # Refresh the list after uninstall
-      $btnRefreshApps.PerformClick()
-    } catch {
-      Set-Status "Error during uninstall: $($_.Exception.Message)"
-      Show-ToolkitToast "Error during uninstall: $($_.Exception.Message)" 'Error'
-    }
-  }
-})
-
-$tooltip.SetToolTip($btnClearSelection, 'Clears all selected items in the list - useful to start fresh selection')
-$btnClearSelection.Add_Click({
-  $gridApps.ClearSelection()
-  Set-Status 'Selection cleared'
-})
-
-$tooltip.SetToolTip($gridApps, 'Select packages/applications from the list, then use Install Selected or Uninstall Selected buttons')
-
-# --- Driver Management Tab ---
-$tabDrivers = New-Object System.Windows.Forms.TabPage
-$tabDrivers.Text = "Driver Management"
-$tabs.TabPages.Add($tabDrivers) | Out-Null
-
-# Driver scan controls
-$lblDriverScan = New-Object System.Windows.Forms.Label; $lblDriverScan.Text='Driver Detection:'; $lblDriverScan.Location=New-Object System.Drawing.Point(10,10); $lblDriverScan.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblDriverScan.Size=New-Object System.Drawing.Size(130,20)
-$btnScanDrivers = New-Object System.Windows.Forms.Button; $btnScanDrivers.Text='Scan System'; $btnScanDrivers.Size=New-Object System.Drawing.Size(100,30); $btnScanDrivers.Location=New-Object System.Drawing.Point(10,30); $btnScanDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnScanMissing = New-Object System.Windows.Forms.Button; $btnScanMissing.Text='Find Missing'; $btnScanMissing.Size=New-Object System.Drawing.Size(100,30); $btnScanMissing.Location=New-Object System.Drawing.Point(120,30); $btnScanMissing.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnScanOutdated = New-Object System.Windows.Forms.Button; $btnScanOutdated.Text='Find Outdated'; $btnScanOutdated.Size=New-Object System.Drawing.Size(100,30); $btnScanOutdated.Location=New-Object System.Drawing.Point(230,30); $btnScanOutdated.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-
-# Driver search controls
-$lblDriverSearch = New-Object System.Windows.Forms.Label; $lblDriverSearch.Text='Driver Search:'; $lblDriverSearch.Location=New-Object System.Drawing.Point(360,10); $lblDriverSearch.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblDriverSearch.Size=New-Object System.Drawing.Size(120,20)
-$btnSearchOnline = New-Object System.Windows.Forms.Button; $btnSearchOnline.Text='Search Online'; $btnSearchOnline.Size=New-Object System.Drawing.Size(100,30); $btnSearchOnline.Location=New-Object System.Drawing.Point(360,30); $btnSearchOnline.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnSearchWU = New-Object System.Windows.Forms.Button; $btnSearchWU.Text='Windows Update'; $btnSearchWU.Size=New-Object System.Drawing.Size(110,30); $btnSearchWU.Location=New-Object System.Drawing.Point(470,30); $btnSearchWU.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-
-# Driver management controls
-$lblDriverMgmt = New-Object System.Windows.Forms.Label; $lblDriverMgmt.Text='Driver Management:'; $lblDriverMgmt.Location=New-Object System.Drawing.Point(10,80); $lblDriverMgmt.Font=New-Object System.Drawing.Font("Arial",9,[System.Drawing.FontStyle]::Bold); $lblDriverMgmt.Size=New-Object System.Drawing.Size(150,20)
-$btnInstallDrivers = New-Object System.Windows.Forms.Button; $btnInstallDrivers.Text='Install Selected'; $btnInstallDrivers.Size=New-Object System.Drawing.Size(120,30); $btnInstallDrivers.Location=New-Object System.Drawing.Point(10,100); $btnInstallDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnInstallDrivers.Enabled=$false
-$btnDownloadDrivers = New-Object System.Windows.Forms.Button; $btnDownloadDrivers.Text='Download Only'; $btnDownloadDrivers.Size=New-Object System.Drawing.Size(110,30); $btnDownloadDrivers.Location=New-Object System.Drawing.Point(140,100); $btnDownloadDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left; $btnDownloadDrivers.Enabled=$false
-$btnBackupDrivers = New-Object System.Windows.Forms.Button; $btnBackupDrivers.Text='Backup Drivers'; $btnBackupDrivers.Size=New-Object System.Drawing.Size(110,30); $btnBackupDrivers.Location=New-Object System.Drawing.Point(260,100); $btnBackupDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-$btnRestoreDrivers = New-Object System.Windows.Forms.Button; $btnRestoreDrivers.Text='Restore Drivers'; $btnRestoreDrivers.Size=New-Object System.Drawing.Size(110,30); $btnRestoreDrivers.Location=New-Object System.Drawing.Point(380,100); $btnRestoreDrivers.Anchor=[System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-
-# Status and progress controls
-$lblDriverStatus = New-Object System.Windows.Forms.Label; $lblDriverStatus.Text='Status: Ready'; $lblDriverStatus.Location=New-Object System.Drawing.Point(500,80); $lblDriverStatus.Size=New-Object System.Drawing.Size(200,20); $lblDriverStatus.ForeColor=[System.Drawing.Color]::Blue
-$progressDrivers = New-Object System.Windows.Forms.ProgressBar; $progressDrivers.Location=New-Object System.Drawing.Point(500,100); $progressDrivers.Size=New-Object System.Drawing.Size(200,23); $progressDrivers.Style=[System.Windows.Forms.ProgressBarStyle]::Continuous; $progressDrivers.Visible=$false
-
-# Driver grid panel
-$panelDrivers = New-Object System.Windows.Forms.Panel
-$panelDrivers.Dock = [System.Windows.Forms.DockStyle]::Fill
-$panelDrivers.Padding = New-Object System.Windows.Forms.Padding(0)
-$panelDrivers.Margin = New-Object System.Windows.Forms.Padding(0)
-
-$panelDriversInner = New-Object System.Windows.Forms.Panel
-$panelDriversInner.Dock = [System.Windows.Forms.DockStyle]::Fill
-$panelDriversInner.Padding = New-Object System.Windows.Forms.Padding(10)
-$panelDriversInner.Margin = New-Object System.Windows.Forms.Padding(0)
-
-$gv = $global:gridDrivers
-if (-not ($gv -and ($gv -is [System.Windows.Forms.DataGridView]))) {
-  try {
-    $gv = New-Object System.Windows.Forms.DataGridView
-    Set-Variable -Name gridDrivers -Scope Global -Value $gv
-  }
-  catch {
-    Write-Log "Failed to create driver grid: $($_.Exception.Message)" 'ERROR'
-    $gv = $null
-  }
-}
-
-if ($gv) {
-  # Configure grid properties via local handle
-  $gv.Dock = [System.Windows.Forms.DockStyle]::Fill
-  $gv.ReadOnly = $true
-  $gv.AutoSizeColumnsMode = 'Fill'
-  $gv.RowHeadersVisible = $false
-  $gv.AllowUserToAddRows = $false
-  $gv.SelectionMode = 'FullRowSelect'
-  $gv.MultiSelect = $true
-  $gv.BackgroundColor = [System.Drawing.Color]::White
-  $gv.BorderStyle = 'Fixed3D'
-  $gv.ScrollBars = 'Both'
-  $gv.AutoSizeRowsMode = 'None'
-  $gv.ColumnHeadersHeightSizeMode = 'AutoSize'
-
-  # Add checkbox column for selection
-  $checkColumn = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
-  $checkColumn.HeaderText = "Select"
-  $checkColumn.Name = "Select"
-  $checkColumn.Width = 50
-  $checkColumn.ReadOnly = $false
-  if (-not ($gv.Columns.Contains($checkColumn.Name))) {
-    $gv.Columns.Add($checkColumn) | Out-Null
-  }
-
-  # Attach event handlers safely
-  try {
-    if (-not $gv.CellContentClick) { throw "No CellContentClick event on grid" }
-    $gv.CellContentClick.Add({
-      param($sender, $e)
-      if ($e.ColumnIndex -eq 0 -and $e.RowIndex -ge 0) {
-        $sender.CommitEdit([System.Windows.Forms.DataGridViewDataErrorContexts]::Commit)
-        Update-DriverButtonStates
-      }
-    })
-
-    $gv.SelectionChanged.Add({ Update-DriverButtonStates })
-  }
-  catch {
-    Write-Log "Failed to attach driver grid events: $($_.Exception.Message)" 'WARN'
-  }
-
-  $panelDriversInner.Controls.Add($gv)
-}
-else {
-  Write-Log "Driver grid not available; skipping UI wiring" 'WARN'
-}
-$panelDrivers.Controls.Add($panelDriversInner)
-
-# Driver tab layout
-$panelDriversTop = New-Object System.Windows.Forms.Panel
-$panelDriversTop.Dock = [System.Windows.Forms.DockStyle]::Top
-$panelDriversTop.Height = 150
-$panelDriversTop.Padding = New-Object System.Windows.Forms.Padding(6)
-$panelDriversTop.Margin = New-Object System.Windows.Forms.Padding(0)
-
-$panelDriversTop.Controls.AddRange(@($lblDriverScan,$btnScanDrivers,$btnScanMissing,$btnScanOutdated,$lblDriverSearch,$btnSearchOnline,$btnSearchWU,$lblDriverMgmt,$btnInstallDrivers,$btnDownloadDrivers,$btnBackupDrivers,$btnRestoreDrivers,$lblDriverStatus,$progressDrivers))
-
-$tblDrivers = New-Object System.Windows.Forms.TableLayoutPanel
-$tblDrivers.Dock = [System.Windows.Forms.DockStyle]::Fill
-$tblDrivers.RowCount = 2
-$tblDrivers.ColumnCount = 1
-$tblDrivers.AutoSize = $false
-$tblDrivers.Margin = New-Object System.Windows.Forms.Padding(0)
-$null = $tblDrivers.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
-$null = $tblDrivers.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent,100)))
-$tblDrivers.Controls.Add($panelDriversTop,0,0)
-$tblDrivers.Controls.Add($panelDrivers,0,1)
-$tabDrivers.Controls.Add($tblDrivers)
-
-# Global driver variables
-$global:DriverScanResults = @()
-$global:SelectedDrivers = @()
-
-# Driver event handlers
-$tooltip.SetToolTip($btnScanDrivers, 'Scan all hardware devices and their current driver status')
-$btnScanDrivers.Add_Click({
-    Set-Status 'Scanning system drivers...'
-    $lblDriverStatus.Text = 'Status: Scanning system...'
-    $progressDrivers.Visible = $true
-    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-    
-    try {
-        $global:DriverScanResults = Get-SystemDriverInfo
-        Update-DriverGrid -Drivers $global:DriverScanResults
-        $lblDriverStatus.Text = "Status: Found $($global:DriverScanResults.Count) devices"
-        Set-Status "System scan complete - found $($global:DriverScanResults.Count) devices"
-    }
-    catch {
-        $lblDriverStatus.Text = 'Status: Scan failed'
-        Set-Status "Driver scan failed: $($_.Exception.Message)"
-        Show-ToolkitToast "Driver scan failed: $($_.Exception.Message)" -Type 'Error'
-    }
-    finally {
-        $progressDrivers.Visible = $false
-    }
-})
-
-$tooltip.SetToolTip($btnScanMissing, 'Find devices with missing or unknown drivers')
-$btnScanMissing.Add_Click({
-    Set-Status 'Scanning for missing drivers...'
-    $lblDriverStatus.Text = 'Status: Finding missing drivers...'
-    $progressDrivers.Visible = $true
-    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-    
-    try {
-        $allDrivers = Get-SystemDriverInfo
-        $missingDrivers = $allDrivers | Where-Object { $_.Status -eq 'Missing' -or $_.Status -eq 'Unknown Device' }
-        $global:DriverScanResults = $missingDrivers
-        Update-DriverGrid -Drivers $missingDrivers
-        $lblDriverStatus.Text = "Status: Found $($missingDrivers.Count) missing drivers"
-        Set-Status "Missing driver scan complete - found $($missingDrivers.Count) missing drivers"
-    }
-    catch {
-        $lblDriverStatus.Text = 'Status: Scan failed'
-        Set-Status "Missing driver scan failed: $($_.Exception.Message)"
-        Show-ToolkitToast "Missing driver scan failed: $($_.Exception.Message)" -Type 'Error'
-    }
-    finally {
-        $progressDrivers.Visible = $false
-    }
-})
-
-$tooltip.SetToolTip($btnScanOutdated, 'Find devices with outdated drivers available online')
-$btnScanOutdated.Add_Click({
-    Set-Status 'Scanning for outdated drivers...'
-    $lblDriverStatus.Text = 'Status: Checking for driver updates...'
-    $progressDrivers.Visible = $true
-    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-    
-    try {
-        $result = Start-AdvancedDriverScan -ScanType 'Outdated'
-        $global:DriverScanResults = $result.OutdatedDrivers
-        Update-DriverGrid -Drivers $result.OutdatedDrivers
-        $lblDriverStatus.Text = "Status: Found $($result.OutdatedDrivers.Count) outdated drivers"
-        Set-Status "Outdated driver scan complete - found $($result.OutdatedDrivers.Count) outdated drivers"
-    }
-    catch {
-        $lblDriverStatus.Text = 'Status: Scan failed'
-        Set-Status "Outdated driver scan failed: $($_.Exception.Message)"
-        Show-ToolkitToast "Outdated driver scan failed: $($_.Exception.Message)" -Type 'Error'
-    }
-    finally {
-        $progressDrivers.Visible = $false
-    }
-})
-
-$tooltip.SetToolTip($btnSearchOnline, 'Search online for drivers for selected devices')
-$btnSearchOnline.Add_Click({
-    $selectedDevices = Get-SelectedDrivers
-    if ($selectedDevices.Count -eq 0) {
-        Show-ToolkitToast 'Please select devices to search for drivers' -Type 'Warning'
-        return
-    }
-    
-    Set-Status 'Searching online for drivers...'
-    $lblDriverStatus.Text = 'Status: Searching online...'
-    $progressDrivers.Visible = $true
-    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-    
-    try {
-        $foundDrivers = @()
-        foreach ($device in $selectedDevices) {
-            $drivers = Search-OnlineDrivers -HardwareID $device.HardwareID -DeviceName $device.DeviceName
-            $foundDrivers += $drivers
-        }
-        
-        $global:DriverScanResults = $foundDrivers
-        Update-DriverGrid -Drivers $foundDrivers
-        $lblDriverStatus.Text = "Status: Found $($foundDrivers.Count) online drivers"
-        Set-Status "Online search complete - found $($foundDrivers.Count) drivers"
-    }
-    catch {
-        $lblDriverStatus.Text = 'Status: Search failed'
-        Set-Status "Online driver search failed: $($_.Exception.Message)"
-        Show-ToolkitToast "Online driver search failed: $($_.Exception.Message)" -Type 'Error'
-    }
-    finally {
-        $progressDrivers.Visible = $false
-    }
-})
-
-$tooltip.SetToolTip($btnSearchWU, 'Search Windows Update for drivers for selected devices')
-$btnSearchWU.Add_Click({
-    $selectedDevices = Get-SelectedDrivers
-    if ($selectedDevices.Count -eq 0) {
-        Show-ToolkitToast 'Please select devices to search for drivers' -Type 'Warning'
-        return
-    }
-    
-    Set-Status 'Searching Windows Update for drivers...'
-    $lblDriverStatus.Text = 'Status: Searching Windows Update...'
-    $progressDrivers.Visible = $true
-    $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-    
-    try {
-        $foundDrivers = @()
-        foreach ($device in $selectedDevices) {
-            $drivers = Search-WindowsUpdateDrivers -HardwareID $device.HardwareID
-            $foundDrivers += $drivers
-        }
-        
-        $global:DriverScanResults = $foundDrivers
-        Update-DriverGrid -Drivers $foundDrivers
-        $lblDriverStatus.Text = "Status: Found $($foundDrivers.Count) Windows Update drivers"
-        Set-Status "Windows Update search complete - found $($foundDrivers.Count) drivers"
-    }
-    catch {
-        $lblDriverStatus.Text = 'Status: Search failed'
-        Set-Status "Windows Update driver search failed: $($_.Exception.Message)"
-        Show-ToolkitToast "Windows Update driver search failed: $($_.Exception.Message)" -Type 'Error'
-    }
-    finally {
-        $progressDrivers.Visible = $false
-    }
-})
-
-$tooltip.SetToolTip($btnInstallDrivers, 'Install selected drivers')
-$btnInstallDrivers.Add_Click({
-    $selectedDrivers = Get-SelectedDrivers
-    if ($selectedDrivers.Count -eq 0) {
-        Show-ToolkitToast 'Please select drivers to install' -Type 'Warning'
-        return
-    }
-    
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        "Install $($selectedDrivers.Count) selected driver(s)?`n`nThis action requires administrator privileges and may require a restart.",
-        'Confirm Driver Installation',
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
-        [System.Windows.Forms.MessageBoxIcon]::Question
+Start-Elevated
+
+# Load required assemblies
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+[void][System.Windows.Forms.Application]::EnableVisualStyles()
+[System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
+
+# Wrapper for Write-Host that prints a divider after likely command-completion messages.
+# This is a heuristic: it looks for keywords like 'complete','finished','started background job','triggered','failed','error'.
+function Write-Divider {
+    param(
+        [string]$Color = 'DarkGray'
     )
-    
-    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
-        Set-Status 'Installing selected drivers...'
-        $lblDriverStatus.Text = 'Status: Installing drivers...'
-        $progressDrivers.Visible = $true
-        $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
-        $progressDrivers.Value = 0
-        $progressDrivers.Maximum = $selectedDrivers.Count
-        
-        try {
-            $installResult = Install-SelectedDrivers -Drivers $selectedDrivers -ShowProgress {
-                param($Current, $Total, $DriverName)
-                $progressDrivers.Value = $Current
-                $lblDriverStatus.Text = "Status: Installing $DriverName ($Current/$Total)"
-                [System.Windows.Forms.Application]::DoEvents()
-            }
-            
-            $lblDriverStatus.Text = "Status: Installation complete - $($installResult.Successful) successful, $($installResult.Failed) failed"
-            Set-Status "Driver installation complete - $($installResult.Successful) successful, $($installResult.Failed) failed"
-            
-            if ($installResult.Failed -gt 0) {
-                Show-ToolkitToast "Driver installation completed with $($installResult.Failed) failures. Check logs for details." -Type 'Warning'
-            } else {
-                Show-ToolkitToast "All drivers installed successfully!" -Type 'Success'
-            }
-            
-            if ($installResult.RequiresRestart) {
-                $restartResult = [System.Windows.Forms.MessageBox]::Show(
-                    'Some drivers require a restart to take effect. Restart now?',
-                    'Restart Required',
-                    [System.Windows.Forms.MessageBoxButtons]::YesNo,
-                    [System.Windows.Forms.MessageBoxIcon]::Question
-                )
-                
-                if ($restartResult -eq [System.Windows.Forms.DialogResult]::Yes) {
-                    Start-Process 'shutdown' -ArgumentList '/r /t 30 /c "Restarting for driver installation"' -NoNewWindow
-                }
-            }
-        }
-        catch {
-            $lblDriverStatus.Text = 'Status: Installation failed'
-            Set-Status "Driver installation failed: $($_.Exception.Message)"
-            Show-ToolkitToast "Driver installation failed: $($_.Exception.Message)" -Type 'Error'
-        }
-        finally {
-            $progressDrivers.Visible = $false
-        }
-    }
-})
-
-$tooltip.SetToolTip($btnDownloadDrivers, 'Download selected drivers without installing')
-$btnDownloadDrivers.Add_Click({
-    $selectedDrivers = Get-SelectedDrivers
-    if ($selectedDrivers.Count -eq 0) {
-        Show-ToolkitToast 'Please select drivers to download' -Type 'Warning'
-        return
-    }
-    
-    # Show folder browser for download location
-    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
-    $folderBrowser.Description = 'Select download location for drivers'
-    $folderBrowser.SelectedPath = [Environment]::GetFolderPath('Desktop')
-    
-    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        Set-Status 'Downloading selected drivers...'
-        $lblDriverStatus.Text = 'Status: Downloading drivers...'
-        $progressDrivers.Visible = $true
-        $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
-        $progressDrivers.Value = 0
-        $progressDrivers.Maximum = $selectedDrivers.Count
-        
-        try {
-            $downloadPath = $folderBrowser.SelectedPath
-            $downloadedCount = 0
-            
-            foreach ($driver in $selectedDrivers) {
-                try {
-                    $downloadedCount++
-                    $progressDrivers.Value = $downloadedCount
-                    $lblDriverStatus.Text = "Status: Downloading $($driver.DriverName) ($downloadedCount/$($selectedDrivers.Count))"
-                    [System.Windows.Forms.Application]::DoEvents()
-                    
-                    # Download driver (implementation depends on driver source)
-                    if ($driver.DownloadURL) {
-                        $fileName = [System.IO.Path]::GetFileName($driver.DownloadURL)
-                        $filePath = Join-Path $downloadPath $fileName
-                        Invoke-WebRequest -Uri $driver.DownloadURL -OutFile $filePath -UseBasicParsing
-                    }
-                }
-                catch {
-                    Write-Log "Failed to download driver $($driver.DriverName): $($_.Exception.Message)"
-                }
-            }
-            
-            $lblDriverStatus.Text = "Status: Downloaded $downloadedCount drivers to $downloadPath"
-            Set-Status "Driver download complete - $downloadedCount files downloaded"
-            Show-ToolkitToast "Drivers downloaded successfully to $downloadPath" -Type 'Success'
-        }
-        catch {
-            $lblDriverStatus.Text = 'Status: Download failed'
-            Set-Status "Driver download failed: $($_.Exception.Message)"
-            Show-ToolkitToast "Driver download failed: $($_.Exception.Message)" -Type 'Error'
-        }
-        finally {
-            $progressDrivers.Visible = $false
-        }
-    }
-})
-
-$tooltip.SetToolTip($btnBackupDrivers, 'Backup all installed drivers to a folder')
-$btnBackupDrivers.Add_Click({
-    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
-    $folderBrowser.Description = 'Select backup location for drivers'
-    $folderBrowser.SelectedPath = [Environment]::GetFolderPath('Desktop')
-    
-    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        Set-Status 'Backing up drivers...'
-        $lblDriverStatus.Text = 'Status: Backing up drivers...'
-        $progressDrivers.Visible = $true
-        $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-        
-        try {
-            $backupPath = $folderBrowser.SelectedPath
-            $result = Backup-CurrentDrivers -BackupPath $backupPath
-            
-            $lblDriverStatus.Text = "Status: Backup complete - $($result.BackedUpCount) drivers backed up"
-            Set-Status "Driver backup complete - $($result.BackedUpCount) drivers backed up to $backupPath"
-            Show-ToolkitToast "Drivers backed up successfully to $backupPath" -Type 'Success'
-        }
-        catch {
-            $lblDriverStatus.Text = 'Status: Backup failed'
-            Set-Status "Driver backup failed: $($_.Exception.Message)"
-            Show-ToolkitToast "Driver backup failed: $($_.Exception.Message)" -Type 'Error'
-        }
-        finally {
-            $progressDrivers.Visible = $false
-        }
-    }
-})
-
-$tooltip.SetToolTip($btnRestoreDrivers, 'Restore drivers from a backup folder')
-$btnRestoreDrivers.Add_Click({
-    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
-    $folderBrowser.Description = 'Select driver backup folder to restore from'
-    $folderBrowser.SelectedPath = [Environment]::GetFolderPath('Desktop')
-    
-    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $restorePath = $folderBrowser.SelectedPath
-        
-        $result = [System.Windows.Forms.MessageBox]::Show(
-            "Restore drivers from $restorePath?`n`nThis will install all driver packages found in the selected folder.",
-            'Confirm Driver Restore',
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Question
-        )
-        
-        if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
-            Set-Status 'Restoring drivers...'
-            $lblDriverStatus.Text = 'Status: Restoring drivers...'
-            $progressDrivers.Visible = $true
-            $progressDrivers.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-            
-            try {
-                # Find all .inf files in the restore path
-                $infFiles = Get-ChildItem -Path $restorePath -Filter "*.inf" -Recurse
-                $restoredCount = 0
-                
-                foreach ($infFile in $infFiles) {
-                    try {
-                        Start-Process 'pnputil' -ArgumentList "/add-driver `"$($infFile.FullName)`" /install" -Wait -NoNewWindow
-                        $restoredCount++
-                        $lblDriverStatus.Text = "Status: Restored $restoredCount/$($infFiles.Count) drivers"
-                        [System.Windows.Forms.Application]::DoEvents()
-                    }
-                    catch {
-                        Write-Log "Failed to restore driver $($infFile.Name): $($_.Exception.Message)"
-                    }
-                }
-                
-                $lblDriverStatus.Text = "Status: Restore complete - $restoredCount drivers restored"
-                Set-Status "Driver restore complete - $restoredCount drivers restored"
-                Show-ToolkitToast "Drivers restored successfully - $restoredCount drivers installed" -Type 'Success'
-            }
-            catch {
-                $lblDriverStatus.Text = 'Status: Restore failed'
-                Set-Status "Driver restore failed: $($_.Exception.Message)"
-                Show-ToolkitToast "Driver restore failed: $($_.Exception.Message)" -Type 'Error'
-            }
-            finally {
-                $progressDrivers.Visible = $false
-            }
-        }
-    }
-})
-
-# Helper functions for driver management
-function Update-DriverGrid {
-    param([array]$Drivers)
-    
-  $global:gridDrivers.DataSource = $null
-  $global:gridDrivers.Rows.Clear()
-    
-    if ($Drivers -and $Drivers.Count -gt 0) {
-        # Create data table
-        $dataTable = New-Object System.Data.DataTable
-        $null = $dataTable.Columns.Add("Select", [System.Boolean])
-        $null = $dataTable.Columns.Add("Device Name", [System.String])
-        $null = $dataTable.Columns.Add("Status", [System.String])
-        $null = $dataTable.Columns.Add("Current Driver", [System.String])
-        $null = $dataTable.Columns.Add("Available Driver", [System.String])
-        $null = $dataTable.Columns.Add("Date", [System.String])
-        $null = $dataTable.Columns.Add("Hardware ID", [System.String])
-        
-        foreach ($driver in $Drivers) {
-            $row = $dataTable.NewRow()
-            $row["Select"] = $false
-            $row["Device Name"] = $driver.DeviceName
-            $row["Status"] = $driver.Status
-            $row["Current Driver"] = $driver.CurrentVersion
-            $row["Available Driver"] = $driver.AvailableVersion
-            $row["Date"] = $driver.DriverDate
-            $row["Hardware ID"] = $driver.HardwareID
-            $dataTable.Rows.Add($row)
-        }
-        
-  $global:gridDrivers.DataSource = $dataTable
-        
-        # Adjust column widths
-  $global:gridDrivers.Columns["Select"].Width = 50
-  $global:gridDrivers.Columns["Device Name"].Width = 200
-  $global:gridDrivers.Columns["Status"].Width = 100
-  $global:gridDrivers.Columns["Current Driver"].Width = 120
-  $global:gridDrivers.Columns["Available Driver"].Width = 120
-  $global:gridDrivers.Columns["Date"].Width = 100
-  $global:gridDrivers.Columns["Hardware ID"].Width = 150
-    }
-    
-    Update-DriverButtonStates
+    & Microsoft.PowerShell.Utility\Write-Host '----------------------------------------------------------------' -ForegroundColor $Color
 }
 
-function Get-SelectedDrivers {
-    $selectedDrivers = @()
-    
-  if ($global:gridDrivers.DataSource) {
-    for ($i = 0; $i -lt $global:gridDrivers.Rows.Count; $i++) {
-      if ($global:gridDrivers.Rows[$i].Cells["Select"].Value -eq $true) {
-        $selectedDrivers += $global:DriverScanResults[$i]
-      }
+# Create form
+$form = New-Object System.Windows.Forms.Form
+$form.Text = 'JKD Toolkit'
+$form.Size = New-Object System.Drawing.Size(1040, 500)
+$form.StartPosition = 'CenterScreen'
+$iconPath = Join-Path -Path $PSScriptRoot -ChildPath 'Resources\jkd-icon.ico'
+if (Test-Path -Path $iconPath) {
+    try {
+        $form.Icon = New-Object System.Drawing.Icon($iconPath)
+    } catch {
+        Write-Host "Warning: Failed to load icon $($_.Exception.Message)"
     }
-  }
-    
-    return $selectedDrivers
+} else {
+    Write-Host "Info: Icon not found at $iconPath - continuing without a form icon."
 }
 
-function Update-DriverButtonStates {
-    $selectedCount = (Get-SelectedDrivers).Count
-    $btnInstallDrivers.Enabled = $selectedCount -gt 0
-    $btnDownloadDrivers.Enabled = $selectedCount -gt 0
-    
-    if ($selectedCount -gt 0) {
-        $btnInstallDrivers.Text = "Install Selected ($selectedCount)"
-        $btnDownloadDrivers.Text = "Download Selected ($selectedCount)"
-    } else {
-        $btnInstallDrivers.Text = "Install Selected"
-        $btnDownloadDrivers.Text = "Download Only"
+# Create two group boxes: Tools and Maintenance
+$tabLeft = New-Object System.Windows.Forms.TabControl
+$tabLeft.Location = New-Object System.Drawing.Point(10,10)
+$tabLeft.Size = New-Object System.Drawing.Size(980,420)
+$tabLeft.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom)
+
+$tabTools = New-Object System.Windows.Forms.TabPage 'Tools'
+$tabApps = New-Object System.Windows.Forms.TabPage 'Applications'
+$tabLeft.Controls.Add($tabTools)
+$tabLeft.Controls.Add($tabApps)
+$form.Controls.Add($tabLeft)
+
+# Create the Tools groupbox and put it inside the Tools tab so existing Add-* calls continue to work
+$grpTools = New-Object System.Windows.Forms.GroupBox
+$grpTools.Text = 'Quick Tools'
+$grpTools.Size = New-Object System.Drawing.Size(200,360)
+$grpTools.Location = New-Object System.Drawing.Point(10,10)
+$grpTools.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left)
+$tabTools.Controls.Add($grpTools)
+
+# Use a FlowLayoutPanel inside Quick Tools so buttons automatically stack vertically
+$flowTools = New-Object System.Windows.Forms.FlowLayoutPanel
+$flowTools.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+$flowTools.WrapContents = $false
+$flowTools.AutoSize = $false
+$flowTools.AutoScroll = $true
+$flowTools.Dock = 'Fill'
+$flowTools.Padding = [System.Windows.Forms.Padding]::new(6)
+$grpTools.Controls.Add($flowTools)
+
+$grpMaint = New-Object System.Windows.Forms.GroupBox
+$grpMaint.Text = 'Maintenance'
+$grpMaint.Size = New-Object System.Drawing.Size(360,280)
+$grpMaint.Location = New-Object System.Drawing.Point(220,10)
+$tabTools.Controls.Add($grpMaint)
+
+# Create Networking group next to Maintenance
+$grpNet = New-Object System.Windows.Forms.GroupBox
+$grpNet.Text = 'Networking'
+$grpNet.Size = New-Object System.Drawing.Size(360,360)
+$grpNet.Location = New-Object System.Drawing.Point(590,10)
+$tabTools.Controls.Add($grpNet)
+
+# Flow layout panel for networking controls (keeps GroupBox but uses flow for children)
+$flowNet = New-Object System.Windows.Forms.FlowLayoutPanel
+$flowNet.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+$flowNet.WrapContents = $false
+$flowNet.AutoSize = $false
+$flowNet.AutoScroll = $true
+$flowNet.Dock = 'Fill'
+$flowNet.Padding = [System.Windows.Forms.Padding]::new(6)
+$grpNet.Controls.Add($flowNet)
+
+# Global toggle for whether DISM should use /LimitAccess. The checkbox is placed inside the
+# Maintenance group so related controls are grouped together. By default we allow online
+# access so DISM can fetch replacement files when needed.
+$global:LimitAccess = $false
+
+# Add network-password control to the Tools group
+. "$PSScriptRoot\Controls\NetworkPasswordControl.ps1"
+Add-NetworkPasswordButton -Parent $flowNet -Location (New-Object System.Drawing.Point(10,20)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
+
+# Networking: Ping control (textbox + button)
+$txtPing = New-Object System.Windows.Forms.TextBox
+$txtPing.Text = 'google.com'
+$txtPing.Size = New-Object System.Drawing.Size(240,24)
+$txtPing.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
+$flowNet.Controls.Add($txtPing)
+
+# Ensure the ping textbox has a stable name so other controls can reference it reliably
+$txtPing.Name = 'txtPing'
+# Expose the ping textbox globally for controls that need a stable reference
+$global:txtPing = $txtPing
+
+# Global networking options: Detailed information toggle and optional port
+$global:Net_Detailed = $false
+$global:Net_UsePort = $false
+$global:Net_Port = ''
+
+$chkDetailed = New-Object System.Windows.Forms.CheckBox
+$chkDetailed.Text = 'Detailed output'
+$chkDetailed.AutoSize = $true
+$chkDetailed.Margin = New-Object System.Windows.Forms.Padding(0,6,0,0)
+$chkDetailed.Checked = $global:Net_Detailed
+$chkDetailed.Add_CheckedChanged({ $global:Net_Detailed = $chkDetailed.Checked; Write-Host "Net_Detailed set to $global:Net_Detailed" })
+$flowNet.Controls.Add($chkDetailed)
+
+$chkUsePort = New-Object System.Windows.Forms.CheckBox
+$chkUsePort.Text = 'Use Port'
+$chkUsePort.AutoSize = $true
+$chkUsePort.Margin = New-Object System.Windows.Forms.Padding(0,6,0,0)
+$chkUsePort.Checked = $global:Net_UsePort
+$chkUsePort.Add_CheckedChanged({ $global:Net_UsePort = $chkUsePort.Checked; Write-Host "Net_UsePort set to $global:Net_UsePort" })
+$flowNet.Controls.Add($chkUsePort)
+
+$portRow = New-Object System.Windows.Forms.Panel
+$portRow.Size = New-Object System.Drawing.Size(240,28)
+$lblPort = New-Object System.Windows.Forms.Label
+$lblPort.Text = 'Port:'
+$lblPort.AutoSize = $true
+$lblPort.Location = New-Object System.Drawing.Point(0,6)
+$txtPort = New-Object System.Windows.Forms.TextBox
+$txtPort.Text = ''
+$txtPort.Size = New-Object System.Drawing.Size(60,20)
+$txtPort.Location = New-Object System.Drawing.Point(40,2)
+$portRow.Controls.Add($lblPort)
+$portRow.Controls.Add($txtPort)
+$flowNet.Controls.Add($portRow)
+
+$btnPing = New-Object System.Windows.Forms.Button
+$btnPing.Text = 'Ping'
+$btnPing.Size = New-Object System.Drawing.Size(80,24)
+$btnPing.Margin = New-Object System.Windows.Forms.Padding(0,6,0,0)
+$btnPing.Add_Click({
+    try {
+        $target = $txtPing.Text
+        if ([string]::IsNullOrWhiteSpace($target)) { Write-Host 'Please enter a hostname or IP in the target textbox.'; return }
+        Write-Host "Pinging $target using Test-Connection..."
+        $res = Test-Connection -ComputerName $target -Count 4 -ErrorAction Stop
+        $res | ForEach-Object { Write-Host "Reply from $($_.Address): Status=$($_.StatusCode) Time=$($_.ResponseTime)ms" }
+    # Divider after ping results
+    Write-Divider
+    } catch {
+        Write-Host "Ping failed: $($_.Exception.Message)"
     }
-}
-
-# --- Tools Tab ---
-$tabTools = New-Object System.Windows.Forms.TabPage
-$tabTools.Text = "Tools & Shortcuts"
-$tabs.TabPages.Add($tabTools) | Out-Null
-
-$btnDev = New-Object System.Windows.Forms.Button; $btnDev.Text='Device Manager'; $btnDev.Size=New-Object System.Drawing.Size(160,40); $btnDev.Location=New-Object System.Drawing.Point(10,10)
-$btnEvt = New-Object System.Windows.Forms.Button; $btnEvt.Text='Event Viewer';   $btnEvt.Size=New-Object System.Drawing.Size(160,40); $btnEvt.Location=New-Object System.Drawing.Point(180,10)
-$btnSrv = New-Object System.Windows.Forms.Button; $btnSrv.Text='Services';        $btnSrv.Size=New-Object System.Drawing.Size(160,40); $btnSrv.Location=New-Object System.Drawing.Point(350,10)
-$btnTsk = New-Object System.Windows.Forms.Button; $btnTsk.Text='Task Manager';    $btnTsk.Size=New-Object System.Drawing.Size(160,40); $btnTsk.Location=New-Object System.Drawing.Point(520,10)
-$btnWU2 = New-Object System.Windows.Forms.Button; $btnWU2.Text='Windows Update';  $btnWU2.Size=New-Object System.Drawing.Size(160,40); $btnWU2.Location=New-Object System.Drawing.Point(690,10)
-
-$btnStart = New-Object System.Windows.Forms.Button; $btnStart.Text='Startup Apps'; $btnStart.Size=New-Object System.Drawing.Size(160,40); $btnStart.Location=New-Object System.Drawing.Point(10,60)
-$btnUpdate = New-Object System.Windows.Forms.Button; $btnUpdate.Text='Check for Updates'; $btnUpdate.Size=New-Object System.Drawing.Size(180,40); $btnUpdate.Location=New-Object System.Drawing.Point(180,60)
-$btnAbout = New-Object System.Windows.Forms.Button; $btnAbout.Text='About Toolkit'; $btnAbout.Size=New-Object System.Drawing.Size(160,40); $btnAbout.Location=New-Object System.Drawing.Point(370,60)
-
-$tabTools.Controls.AddRange(@($btnDev,$btnEvt,$btnSrv,$btnTsk,$btnWU2,$btnStart,$btnUpdate,$btnAbout))
-
-$tooltip.SetToolTip($btnDev, 'Opens Device Manager to view and manage hardware devices and drivers')
-$btnDev.Add_Click({ Start-SystemTool 'DeviceManager' })
-$tooltip.SetToolTip($btnEvt, 'Opens Event Viewer to check system logs and troubleshoot issues')
-$btnEvt.Add_Click({ Start-SystemTool 'EventViewer' })
-$tooltip.SetToolTip($btnSrv, 'Opens Services manager to view and control Windows background services')
-$btnSrv.Add_Click({ Start-SystemTool 'Services' })
-$tooltip.SetToolTip($btnTsk, 'Opens Task Manager to monitor running programs and system performance')
-$btnTsk.Add_Click({ Start-SystemTool 'TaskManager' })
-$tooltip.SetToolTip($btnWU2, 'Opens Windows Update settings to check for and install system updates')
-$btnWU2.Add_Click({ Start-SystemTool 'WindowsUpdate' })
-$tooltip.SetToolTip($btnStart, 'Opens Startup Apps settings to manage which programs start with Windows')
-$btnStart.Add_Click({ Start-SystemTool 'StartupApps' })
-$tooltip.SetToolTip($btnUpdate, 'Check for and install updates to the JKD-Toolkit from GitHub')
-$btnUpdate.Add_Click({ Start-UpdateCheck -Force })
-$tooltip.SetToolTip($btnAbout, 'Display version information and details about the JKD-Toolkit')
-$btnAbout.Add_Click({ 
-  $aboutText = @"
-JKD-Toolkit - Windows 11 Tech Toolkit
-Version: $(Get-ToolkitVersion)
-
-Author: ChatGPT for Josh (JKagiDesigns / Cultivatronics)
-Repository: https://github.com/$global:RepoOwner/$global:RepoName
-
-A comprehensive PowerShell-based GUI toolkit for IT professionals
-and technicians to troubleshoot, repair, and set up Windows 11 systems.
-
-Features:
-• System diagnostics and repair tools
-• Network troubleshooting utilities  
-• Application management (install/uninstall)
-• Driver detection and management
-• Privacy and customization tools
-• Automatic update checking
-
-Last Update Check: $(if ((Get-LastUpdateCheck) -eq [datetime]::MinValue) { 'Never' } else { (Get-LastUpdateCheck).ToString('yyyy-MM-dd HH:mm') })
-"@
-  Show-ToolkitToast $aboutText "About JKD-Toolkit"
 })
+$flowNet.Controls.Add($btnPing)
 
-#endregion
+# Tooltip for Ping textbox and button
+$netTT = New-Object System.Windows.Forms.ToolTip
+$netTT.AutoPopDelay = 20000
+$netTT.InitialDelay = 400
+$netTT.ReshowDelay = 100
+$netTT.ShowAlways = $true
+$netTT.SetToolTip($txtPing, 'Enter a hostname or IP address here (for example: google.com or 8.8.8.8).')
+$netTT.SetToolTip($btnPing, 'Click to check network reachability to the address entered on the left. Results are printed to the console.')
+$txtPing.Tag = @{ ToolTip = $netTT }
+$btnPing.Tag = @{ ToolTip = $netTT }
 
-# Preload Overview
-$btnRefresh.PerformClick()
+. "$PSScriptRoot\Controls\TraceRouteControl.ps1"
+Add-TraceRouteButton -Parent $flowNet -TargetTextBox $txtPing -PortTextBox $txtPort -UsePortCheckBox $chkUsePort -DetailedCheckBox $chkDetailed -Location (New-Object System.Drawing.Point(10,235)) -Size (New-Object System.Drawing.Size(80,24)) | Out-Null
 
-# Update package manager button states
-Update-PackageManagerButtons
+# Get Network Configuration button and active-only checkbox
+. "$PSScriptRoot\Controls\GetNetworkConfigurationControl.ps1"
+Add-GetNetworkConfigurationButton -Parent $flowNet -Location (New-Object System.Drawing.Point(10,200)) -Size (New-Object System.Drawing.Size(180,40)) | Out-Null
 
-# Initialize in installed apps mode with error handling
-try {
-  Switch-ToInstalledMode
-  
-  # Add a small delay to ensure all functions are loaded
-  Start-Sleep -Milliseconds 100
-  
-  Set-Status 'Loading installed applications...'
-  $global:InstalledApps = Get-InstalledApplications
-  
-  if ($global:InstalledApps -and $global:InstalledApps.Count -gt 0) {
-    # Clear and setup grid for installed apps
-    $gridApps.DataSource = $null
-    $gridApps.Columns.Clear()
-    $gridApps.Rows.Clear()
-    
-    # Add columns for installed apps
-    $colName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colName.Name = 'Name'
-    $colName.HeaderText = 'Application Name'
-    $colName.Width = 300
-    $gridApps.Columns.Add($colName) | Out-Null
-    
-    $colVersion = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colVersion.Name = 'Version'
-    $colVersion.HeaderText = 'Version'
-    $colVersion.Width = 120
-    $gridApps.Columns.Add($colVersion) | Out-Null
-    
-    $colSource = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colSource.Name = 'Source'
-    $colSource.HeaderText = 'Source'
-    $colSource.Width = 100
-    $gridApps.Columns.Add($colSource) | Out-Null
-    
-    $colPublisher = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colPublisher.Name = 'Publisher'
-    $colPublisher.HeaderText = 'Publisher'
-    $colPublisher.AutoSizeMode = 'Fill'
-    $gridApps.Columns.Add($colPublisher) | Out-Null
-    
-    # Add data rows
-    foreach ($app in $global:InstalledApps) {
-      $rowIndex = $gridApps.Rows.Add()
-      $gridApps.Rows[$rowIndex].Cells['Name'].Value = $app.Name
-      $gridApps.Rows[$rowIndex].Cells['Version'].Value = $app.Version
-      $gridApps.Rows[$rowIndex].Cells['Source'].Value = $app.Source
-      $gridApps.Rows[$rowIndex].Cells['Publisher'].Value = if ($app.PSObject.Properties['Publisher']) { $app.Publisher } else { 'Unknown' }
-    }
-    
-    Set-Status "Found $($global:InstalledApps.Count) installed applications"
-  } else {
-    # Show message if no apps found
-    $gridApps.DataSource = $null
-    $gridApps.Columns.Clear()
-    $gridApps.Rows.Clear()
-    
-    $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $col.Name = 'Message'
-    $col.HeaderText = 'Status'
-    $col.AutoSizeMode = 'Fill'
-    $gridApps.Columns.Add($col) | Out-Null
-    $rowIndex = $gridApps.Rows.Add()
-    $gridApps.Rows[$rowIndex].Cells['Message'].Value = 'No installed applications found. Click "Refresh Installed Apps" to try again.'
-    
-    Set-Status 'No installed applications found'
-  }
-} catch {
-  Set-Status "Error loading installed applications: $($_.Exception.Message)"
-  
-  # Show error in grid
-  $gridApps.DataSource = $null
-  $gridApps.Columns.Clear()
-  $gridApps.Rows.Clear()
-  
-  $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-  $col.Name = 'Error'
-  $col.HeaderText = 'Error'
-  $col.AutoSizeMode = 'Fill'
-  $gridApps.Columns.Add($col) | Out-Null
-  $rowIndex = $gridApps.Rows.Add()
-  $gridApps.Rows[$rowIndex].Cells['Error'].Value = "Error: $($_.Exception.Message). Click 'Refresh Installed Apps' to try again."
-}
+# Additional tools: Toggle Dark Mode, Activation check/hide, O&O ShutUp, Wallpaper
+. "$PSScriptRoot\Controls\RunMicrosoftUpdateControl.ps1"
+Add-RunMicrosoftUpdateButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,20)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
+. "$PSScriptRoot\Controls\ToggleDarkModeControl.ps1"
+Add-ToggleDarkModeButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,70)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
+. "$PSScriptRoot\Controls\ActivationControl.ps1"
+Add-ActivationButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,120)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
+. "$PSScriptRoot\Controls\OOSUControl.ps1"
+Add-OOSUButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,170)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
+. "$PSScriptRoot\Controls\WallpaperControl.ps1"
+Add-WallpaperButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,220)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 
-# Show the form
-[void]$form.ShowDialog()
+# Add CheckHealth and RestoreHealth controls to the Maintenance group
+. "$PSScriptRoot\Controls\CheckHealthControl.ps1"
+. "$PSScriptRoot\Controls\RestoreHealthControl.ps1"
+. "$PSScriptRoot\Controls\RestoreHealthFromISOControl.ps1"
+. "$PSScriptRoot\Controls\CheckDiskControl.ps1"
+
+# Create nested 'Image' group inside Maintenance for DISM/image related controls
+$grpImage = New-Object System.Windows.Forms.GroupBox
+$grpImage.Text = 'Image'
+$grpImage.Size = New-Object System.Drawing.Size(340,180)
+$grpImage.Location = New-Object System.Drawing.Point(10,20)
+$grpMaint.Controls.Add($grpImage)
+
+# Add DISM / image-related buttons into the Image group
+Add-CheckHealthButton -Parent $grpImage -Location (New-Object System.Drawing.Point(10,20)) -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
+Add-RestoreHealthButton -Parent $grpImage -Location (New-Object System.Drawing.Point(180,20)) -Size (New-Object System.Drawing.Size(150,32)) | Out-Null
+Add-RestoreHealthFromISOButton -Parent $grpImage -Location (New-Object System.Drawing.Point(10,60)) -Size (New-Object System.Drawing.Size(320,40)) | Out-Null
+
+# Checkbox inside Image group: toggle /LimitAccess for DISM operations
+$chkLimit = New-Object System.Windows.Forms.CheckBox
+$chkLimit.Text = 'Use /LimitAccess for DISM'
+$chkLimit.AutoSize = $true
+$chkLimit.Location = New-Object System.Drawing.Point(10,135)
+$chkLimit.Checked = $global:LimitAccess
+$chkLimit.Add_CheckedChanged({ $global:LimitAccess = $chkLimit.Checked; Write-Host "LimitAccess set to $global:LimitAccess" })
+$grpImage.Controls.Add($chkLimit)
+    # Tooltip for LimitAccess checkbox (plain-language)
+    $chkTT = New-Object System.Windows.Forms.ToolTip
+    $chkTT.AutoPopDelay = 20000
+    $chkTT.InitialDelay = 400
+    $chkTT.ReshowDelay = 100
+    $chkTT.ShowAlways = $true
+    $chkTT.SetToolTip($chkLimit, "When checked, DISM will avoid contacting Windows Update or online sources while repairing files. We recommend leaving this unchecked so DISM can download replacement files from the internet if needed.")
+    # Keep tooltip alive by storing reference on the checkbox
+    $chkLimit.Tag = @{ ToolTip = $chkTT }
+
+# Create nested 'Disk' group inside Maintenance for disk tools like chkdsk
+$grpDisk = New-Object System.Windows.Forms.GroupBox
+$grpDisk.Text = 'Disk'
+$grpDisk.Size = New-Object System.Drawing.Size(340,60)
+$grpDisk.Location = New-Object System.Drawing.Point(10,210)
+$grpMaint.Controls.Add($grpDisk)
+
+# Add Check Disk button into Disk group
+Add-CheckDiskButton -Parent $grpDisk -Location (New-Object System.Drawing.Point(10,15)) -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
+
+
+# Applications tab: Get Installed Applications control
+. { Remove-Item Function:\Add-GetInstalledApplicationsControl -ErrorAction SilentlyContinue }
+. "$PSScriptRoot\Controls\GetInstalledApplicationsControl.ps1"
+Add-GetInstalledApplicationsControl -Parent $tabApps -Location (New-Object System.Drawing.Point(10,10)) -Size (New-Object System.Drawing.Size(920,380)) | Out-Null
+
+# Run the form
+[System.Windows.Forms.Application]::Run($form)
+
