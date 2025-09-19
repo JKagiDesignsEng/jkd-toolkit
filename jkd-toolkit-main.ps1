@@ -1,3 +1,4 @@
+# Update button sizes for consistency
 <#
 jkd-toolkit-main.ps1
 
@@ -66,7 +67,7 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # Create form
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'JKD Toolkit'
-$form.Size = New-Object System.Drawing.Size(1040, 500)
+$form.Size = New-Object System.Drawing.Size(1040, 560)
 $form.StartPosition = 'CenterScreen'
 $iconPath = Join-Path -Path $PSScriptRoot -ChildPath 'Resources\jkd-icon.ico'
 if (Test-Path -Path $iconPath) {
@@ -120,7 +121,7 @@ function Clear-StatusBar {
 # Create two group boxes: Tools and Maintenance
 $tabLeft = New-Object System.Windows.Forms.TabControl
 $tabLeft.Location = New-Object System.Drawing.Point(10,10)
-$tabLeft.Size = New-Object System.Drawing.Size(980,420)
+$tabLeft.Size = New-Object System.Drawing.Size(980,480)
 $tabLeft.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom)
 
 $tabTools = New-Object System.Windows.Forms.TabPage 'Tools'
@@ -132,7 +133,7 @@ $form.Controls.Add($tabLeft)
 # Create the Tools groupbox and put it inside the Tools tab so existing Add-* calls continue to work
 $grpTools = New-Object System.Windows.Forms.GroupBox
 $grpTools.Text = 'Quick Tools'
-$grpTools.Size = New-Object System.Drawing.Size(200,360)
+$grpTools.Size = New-Object System.Drawing.Size(200,420)
 $grpTools.Location = New-Object System.Drawing.Point(10,10)
 $grpTools.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left)
 $tabTools.Controls.Add($grpTools)
@@ -179,17 +180,59 @@ $global:LimitAccess = $false
 . "$PSScriptRoot\Controls\NetworkPasswordControl.ps1"
 Add-NetworkPasswordButton -Parent $flowNet -Location (New-Object System.Drawing.Point(10,20)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 
-# Networking: Ping control (textbox + button)
+# Networking: Ping control (label + textbox inside a small panel so they stay on one row)
+$lblPing = New-Object System.Windows.Forms.Label
+$lblPing.Text = 'Target:'
+$lblPing.AutoSize = $true
+$lblPing.Name = 'lblPing'
+
 $txtPing = New-Object System.Windows.Forms.TextBox
 $txtPing.Text = 'google.com'
-$txtPing.Size = New-Object System.Drawing.Size(240,24)
+$txtPing.Size = New-Object System.Drawing.Size(160,24)
 $txtPing.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
-$flowNet.Controls.Add($txtPing)
-
-# Ensure the ping textbox has a stable name so other controls can reference it reliably
 $txtPing.Name = 'txtPing'
+
+# Compute panel size using preferred label width so controls fit nicely
+try {
+    # Use TextRenderer to reliably measure the label width as an integer
+    $lblWidth = [System.Windows.Forms.TextRenderer]::MeasureText($lblPing.Text, $lblPing.Font).Width
+} catch {
+    # Fallback to PreferredSize in case MeasureText fails
+    $lblWidth = [int]$lblPing.PreferredSize.Width
+}
+
+# Ensure the label uses a fixed width to avoid reflow/overlap
+$lblPing.AutoSize = $false
+$lblPing.Width = [int]$lblWidth
+
+# Normalize in case MeasureText returned an array or unexpected value
+if ($lblWidth -is [System.Array]) { $lblWidth = [int]$lblWidth[0] } else { $lblWidth = [int]$lblWidth }
+
+$panelHeight = [Math]::Max($txtPing.Height, $lblPing.PreferredSize.Height)
+$panelWidth = [int]($lblPing.Width + 8 + $txtPing.Width)
+
+$pnlPingRow = New-Object System.Windows.Forms.Panel
+$pnlPingRow.Name = 'pnlPingRow'
+$pnlPingRow.Size = New-Object System.Drawing.Size($panelWidth, $panelHeight)
+$pnlPingRow.Margin = $txtPing.Margin
+
+$lblPing.Location = New-Object System.Drawing.Point(0, [int](($panelHeight - $lblPing.PreferredSize.Height)/2))
+$txtPing.Location = New-Object System.Drawing.Point([int]($lblPing.Width + 8), [int](($panelHeight - $txtPing.Height)/2))
+
+$pnlPingRow.Controls.Add($lblPing)
+$pnlPingRow.Controls.Add($txtPing)
+$flowNet.Controls.Add($pnlPingRow)
+
 # Expose the ping textbox globally for controls that need a stable reference
 $global:txtPing = $txtPing
+
+# Tooltip for the ping label (describe usage of the textbox)
+$netPingTT = New-Object System.Windows.Forms.ToolTip
+$netPingTT.AutoPopDelay = 20000
+$netPingTT.InitialDelay = 200
+$netPingTT.ReshowDelay = 100
+$netPingTT.ShowAlways = $true
+$netPingTT.SetToolTip($lblPing, 'Enter a hostname or IP address here (e.g., google.com or 8.8.8.8)')
 
 # Global networking options: Detailed information toggle and optional port
 $global:Net_Detailed = $false
@@ -207,28 +250,44 @@ $flowNet.Controls.Add($chkDetailed)
 $chkUsePort = New-Object System.Windows.Forms.CheckBox
 $chkUsePort.Text = 'Use Port'
 $chkUsePort.AutoSize = $true
-$chkUsePort.Margin = New-Object System.Windows.Forms.Padding(0,6,0,0)
 $chkUsePort.Checked = $global:Net_UsePort
 $chkUsePort.Add_CheckedChanged({ $global:Net_UsePort = $chkUsePort.Checked; Write-Host "Net_UsePort set to $global:Net_UsePort" })
-$flowNet.Controls.Add($chkUsePort)
 
-$portRow = New-Object System.Windows.Forms.Panel
-$portRow.Size = New-Object System.Drawing.Size(240,28)
+# Build a horizontal FlowLayoutPanel row: [ Use Port checkbox ] [ Port: label ] [ Port textbox ]
+$pnlPortRow = New-Object System.Windows.Forms.FlowLayoutPanel
+$pnlPortRow.Name = 'pnlPortRow'
+$pnlPortRow.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
+$pnlPortRow.WrapContents = $false
+$pnlPortRow.AutoSize = $true
+$pnlPortRow.AutoSizeMode = 'GrowOnly'
+$pnlPortRow.Margin = New-Object System.Windows.Forms.Padding(0,6,0,0)
+
 $lblPort = New-Object System.Windows.Forms.Label
 $lblPort.Text = 'Port:'
 $lblPort.AutoSize = $true
-$lblPort.Location = New-Object System.Drawing.Point(0,6)
+
 $txtPort = New-Object System.Windows.Forms.TextBox
 $txtPort.Text = ''
 $txtPort.Size = New-Object System.Drawing.Size(60,20)
-$txtPort.Location = New-Object System.Drawing.Point(40,2)
-$portRow.Controls.Add($lblPort)
-$portRow.Controls.Add($txtPort)
-$flowNet.Controls.Add($portRow)
+
+$pnlPortRow.Controls.Add($chkUsePort)
+$pnlPortRow.Controls.Add($lblPort)
+$pnlPortRow.Controls.Add($txtPort)
+$flowNet.Controls.Add($pnlPortRow)
+
+# Tooltip for port controls
+$portTT = New-Object System.Windows.Forms.ToolTip
+$portTT.AutoPopDelay = 20000
+$portTT.InitialDelay = 200
+$portTT.ReshowDelay = 100
+$portTT.ShowAlways = $true
+$portTT.SetToolTip($chkUsePort, 'Toggle using a destination port when running network checks.')
+$portTT.SetToolTip($lblPort, 'Enter the TCP/UDP port number to use (numeric).')
 
 $btnPing = New-Object System.Windows.Forms.Button
 $btnPing.Text = 'Ping'
 $btnPing.Size = New-Object System.Drawing.Size(80,24)
+$btnPing.Size = New-Object System.Drawing.Size(160,40)
 $btnPing.Margin = New-Object System.Windows.Forms.Padding(0,6,0,0)
 $btnPing.Add_Click({
     try {
@@ -258,11 +317,11 @@ $txtPing.Tag = @{ ToolTip = $netTT }
 $btnPing.Tag = @{ ToolTip = $netTT }
 
 . "$PSScriptRoot\Controls\TraceRouteControl.ps1"
-Add-TraceRouteButton -Parent $flowNet -TargetTextBox $txtPing -PortTextBox $txtPort -UsePortCheckBox $chkUsePort -DetailedCheckBox $chkDetailed -Location (New-Object System.Drawing.Point(10,235)) -Size (New-Object System.Drawing.Size(80,24)) | Out-Null
+Add-TraceRouteButton -Parent $flowNet -TargetTextBox $txtPing -PortTextBox $txtPort -UsePortCheckBox $chkUsePort -DetailedCheckBox $chkDetailed -Location (New-Object System.Drawing.Point(10,235)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 
 # Get Network Configuration button and active-only checkbox
 . "$PSScriptRoot\Controls\GetNetworkConfigurationControl.ps1"
-Add-GetNetworkConfigurationButton -Parent $flowNet -Location (New-Object System.Drawing.Point(10,200)) -Size (New-Object System.Drawing.Size(180,40)) | Out-Null
+Add-GetNetworkConfigurationButton -Parent $flowNet -Location (New-Object System.Drawing.Point(10,200)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 
 # Additional tools: Toggle Dark Mode, Activation check/hide, O&O ShutUp, Wallpaper
 . "$PSScriptRoot\Controls\RunMicrosoftUpdateControl.ps1"
@@ -277,6 +336,11 @@ Add-OOSUButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,
 Add-WallpaperButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,220)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 . "$PSScriptRoot\Controls\CheckAndFixDriversControl.ps1"
 Add-CheckAndFixDriversControl -Parent $flowTools | Out-Null
+# New quick tools: Windows Defender and Microsoft Malicious Software Removal
+. "$PSScriptRoot\Controls\RunWindowsDefenderControl.ps1"
+Add-RunWindowsDefenderButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,270)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
+. "$PSScriptRoot\Controls\RunMMRControl.ps1"
+Add-RunMMRButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,320)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 
 # Add CheckHealth and RestoreHealth controls to the Maintenance group
 . "$PSScriptRoot\Controls\CheckHealthControl.ps1"

@@ -20,21 +20,35 @@ function Add-GetNetworkConfigurationButton {
     param(
         [Parameter(Mandatory=$true)][System.Windows.Forms.Control]$Parent,
         [Parameter(Mandatory=$false)][System.Drawing.Point]$Location = $(New-Object System.Drawing.Point(10,105)),
-        [Parameter(Mandatory=$false)][System.Drawing.Size]$Size = $(New-Object System.Drawing.Size(180,40))
+        [Parameter(Mandatory=$false)][System.Drawing.Size]$Size = $(New-Object System.Drawing.Size(160,40))
     )
 
-    # Checkbox: Show active only
+    # Wrap controls in a panel so FlowLayoutPanel (or other parents) will keep their relative layout
+    $spacing = 8
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Height = [int]$Size.Height
+    $panel.Location = $Location
+
     $chk = New-Object System.Windows.Forms.CheckBox
     $chk.Text = 'Show active only'
     $chk.AutoSize = $true
-    $chk.Location = $Location
     $chk.Checked = $false
 
-    # Button: Get Network Configuration
     $btn = New-Object System.Windows.Forms.Button
     $btn.Text = 'Get Network Configuration'
-    $btn.Size = (New-Object System.Drawing.Size(($Size.Width),24))
-    $btn.Location = [System.Drawing.Point]::new($Location.X, ($Location.Y + 25))
+    $btn.Size = New-Object System.Drawing.Size([int]$Size.Width, [int]$Size.Height)
+
+    # Place checkbox and button inside the panel with spacing
+    # Place controls
+    $chk.Location = [System.Drawing.Point]::new(4, ([int](($panel.Height - $chk.PreferredSize.Height) / 2)))
+    $btn.Location = [System.Drawing.Point]::new($chk.Location.X + $chk.PreferredSize.Width + $spacing, 0)
+
+    $panel.Controls.Add($chk)
+    $panel.Controls.Add($btn)
+
+    # Compute a tight panel width to avoid horizontal scrollbars in the parent FlowLayoutPanel
+    $paddingRight = 4
+    $panel.Width = [int]($btn.Location.X + $btn.Width + $paddingRight)
 
     $btn.Add_Click({
         try {
@@ -74,8 +88,7 @@ function Add-GetNetworkConfigurationButton {
     $chk.Tag = @{ ToolTip = $tt }
     $btn.Tag = @{ ToolTip = $tt }
 
-    $Parent.Controls.Add($chk)
-    $Parent.Controls.Add($btn)
+    $Parent.Controls.Add($panel)
 
     return @{ CheckBox = $chk; Button = $btn }
 }

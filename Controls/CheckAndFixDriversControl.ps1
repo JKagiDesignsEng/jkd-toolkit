@@ -10,9 +10,11 @@ function Add-CheckAndFixDriversControl {
     $btn = New-Object System.Windows.Forms.Button
     $btn.Name = 'btnCheckFixDrivers'
     $btn.Text = 'Check & Fix Drivers'
-    $btn.AutoSize = $true
+    $btn.AutoSize = $false
     $btn.Padding = [System.Windows.Forms.Padding]::new(6)
     $btn.Tag = @{ Started = $false }
+    $btn.Size = (New-Object System.Drawing.Size(160,40))
+
 
     # No per-control status button: use the shared status bar in the main form
 

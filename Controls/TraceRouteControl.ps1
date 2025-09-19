@@ -24,7 +24,7 @@ function Add-TraceRouteButton {
         [Parameter(Mandatory=$false)][System.Windows.Forms.CheckBox]$UsePortCheckBox,
         [Parameter(Mandatory=$false)][System.Windows.Forms.CheckBox]$DetailedCheckBox,
         [Parameter(Mandatory=$false)][System.Drawing.Point]$Location = $(New-Object System.Drawing.Point(10,170)),
-        [Parameter(Mandatory=$false)][System.Drawing.Size]$Size = $(New-Object System.Drawing.Size(80,24))
+        [Parameter(Mandatory=$false)][System.Drawing.Size]$Size = $(New-Object System.Drawing.Size(160,40))
     )
 
     $btn = New-Object System.Windows.Forms.Button
@@ -147,5 +147,75 @@ function Add-TraceRouteButton {
     })
 
     $Parent.Controls.Add($btn)
+
+    # If a global txtPing TextBox exists, add a non-intrusive label to its left (avoid duplicates).
+    # If the textbox lives in a FlowLayoutPanel, move it into a small Panel wrapper so the label and textbox stay together.
+    try {
+        if ($global:txtPing -and ($global:txtPing -is [System.Windows.Forms.TextBox])) {
+            $txt = $global:txtPing
+            $parentForTxt = $txt.Parent
+            if ($parentForTxt) {
+                # If a label already exists near the textbox, do nothing
+                $existingLabel = $null
+                try { $existingLabel = $parentForTxt.Controls | Where-Object { $_.Name -eq 'lblPing' -or $_.Name -eq 'lblPingWrapper' } } catch { }
+
+                if (-not $existingLabel) {
+                    $lbl = New-Object System.Windows.Forms.Label
+                    $lbl.Name = 'lblPing'
+                    $lbl.Text = 'Target:'
+                    $lbl.AutoSize = $true
+
+                    $spacing = 6
+                    $preferredWidth = $lbl.PreferredSize.Width
+
+                    # If parent is a FlowLayoutPanel, create a small Panel wrapper containing the label and textbox
+                    # This keeps the two controls on the same horizontal row even when the flow is TopDown
+                    if ($parentForTxt -is [System.Windows.Forms.FlowLayoutPanel]) {
+                        $flow = $parentForTxt
+                        $idx = $flow.Controls.IndexOf($txt)
+
+                        $wrapperName = 'pnlTxtPingWrapper'
+                        $existingWrapper = $flow.Controls | Where-Object { $_.Name -eq $wrapperName }
+                        if (-not $existingWrapper) {
+                            # Compute sizes
+                            $panelHeight = [Math]::Max($txt.Height, $lbl.PreferredSize.Height)
+                            $panelWidth = $lbl.PreferredSize.Width + 8 + $txt.Width
+
+                            $wrapper = New-Object System.Windows.Forms.Panel
+                            $wrapper.Name = $wrapperName
+                            $wrapper.Size = New-Object System.Drawing.Size($panelWidth, $panelHeight)
+                            $wrapper.Margin = $txt.Margin
+
+                            # Position label and textbox inside wrapper
+                            $lbl.Location = New-Object System.Drawing.Point(0, [int](($panelHeight - $lbl.PreferredSize.Height)/2))
+                            $lbl.Margin = New-Object System.Windows.Forms.Padding(0)
+                            $txt.Location = New-Object System.Drawing.Point($lbl.PreferredSize.Width + 8, [int](($panelHeight - $txt.Height)/2))
+                            $txt.Margin = New-Object System.Windows.Forms.Padding(0)
+
+                            # Add label then textbox to wrapper. Adding the textbox to wrapper will remove it from the original flow.
+                            $wrapper.Controls.Add($lbl)
+                            $wrapper.Controls.Add($txt)
+
+                            # Insert wrapper into the flow at the original index
+                            $flow.Controls.Add($wrapper)
+                            if ($idx -ge 0) {
+                                try { $flow.Controls.SetChildIndex($wrapper, $idx) } catch { }
+                            }
+                        }
+                    }
+                    else {
+                        # Non-flow parents: add label as a sibling and position absolutely to the left
+                        $desiredX = $txt.Location.X - ($preferredWidth + $spacing)
+                        if ($desiredX -lt 0) { $desiredX = 0 }
+                        $desiredY = $txt.Location.Y + [int](($txt.Height - $lbl.PreferredSize.Height)/2)
+                        $lbl.Location = New-Object System.Drawing.Point($desiredX, $desiredY)
+                        $parentForTxt.Controls.Add($lbl)
+                        $lbl.BringToFront()
+                    }
+                }
+            }
+        }
+    } catch { }
+
     return $btn
 }
