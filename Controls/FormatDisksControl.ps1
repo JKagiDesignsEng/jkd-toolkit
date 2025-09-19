@@ -10,8 +10,14 @@ function Add-FormatDisksButton {
     $btn.Text = 'Format Disks'
     $btn.Size = $Size
     $btn.Location = $Location
+    # Create a persistent, descriptive ToolTip and keep a reference on the control Tag
     $tt = New-Object System.Windows.Forms.ToolTip
-    $tt.SetToolTip($btn, 'Format selected disks. This is a placeholder and will not perform destructive actions.')
+    $tt.AutoPopDelay = 20000
+    $tt.InitialDelay = 300
+    $tt.ReshowDelay = 100
+    $tt.ShowAlways = $true
+    $tt.SetToolTip($btn, "Open Disk Management so you can partition, format, or prepare drives manually. This launcher does not perform any destructive formatting directly. Use Disk Management or a dedicated imaging tool for destructive operations. Always double-check the target disk before formatting.")
+    $btn.Tag = @{ ToolTip = $tt }
 
     $btn.Add_Click({
         try {

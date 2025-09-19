@@ -45,6 +45,13 @@ Maintenance (examples):
 - DISM image checks and RestoreHealth (optional `/LimitAccess`)
 - Check disk (chkdsk)
 
+Disk tools (new in v2):
+
+- Format Disks: Opens Windows Disk Management so you can partition, format, or prepare drives manually. The toolkit does not perform destructive formatting directly; use Disk Management or dedicated imaging tools for destructive operations.
+- Clone Disk: Provides a guided flow to create a VHD/VHDX using `disk2vhd` (Sysinternals) when available, or shows guidance to use Clonezilla for full device-to-device cloning. The button prompts for destination and requires confirmation before running elevated commands. Full device cloning is destructive — double-check targets and backups.
+- Create Recovery: Launches the Windows Recovery Drive creation tool (`recoverydrive.exe`) or opens the Settings > Recovery page so you can create a USB recovery drive. Requires a USB drive and explicit confirmation in the system tool.
+- Use Recovery: Opens Settings > Recovery so you can boot from or apply existing recovery media.
+
 Networking (examples):
 
 - Ping: `Test-Connection -ComputerName <target> -Count 4`
@@ -100,3 +107,9 @@ Resources/
 Copyright © JKagiDesigns LLC. All rights reserved.
 
 This toolkit is intended for IT professionals and advanced users. Test changes in a safe environment before applying to production systems.
+
+Safety notes:
+
+- Always verify the destination drive when performing clone or format operations. Mistargeting can result in data loss.
+- `disk2vhd` creates virtual disk images (VHD/VHDX) and is non-destructive to the source, but images can be large — ensure you have sufficient free space.
+- For bit-for-bit device cloning use Clonezilla from bootable media; the toolkit offers guidance but does not automate creating Clonezilla media.

@@ -10,8 +10,14 @@ function Add-CloneDiskButton {
     $btn.Text = 'Clone Disk'
     $btn.Size = $Size
     $btn.Location = $Location
+    # Provide a clear, persistent tooltip describing the clone workflow and safety
     $tt = New-Object System.Windows.Forms.ToolTip
-    $tt.SetToolTip($btn, 'Clone a disk to another disk. Placeholder: no cloning will occur.')
+    $tt.AutoPopDelay = 30000
+    $tt.InitialDelay = 300
+    $tt.ReshowDelay = 100
+    $tt.ShowAlways = $true
+    $tt.SetToolTip($btn, "Clone a disk to a file or another disk. If 'disk2vhd' (Sysinternals) is installed the tool will offer to create a VHD/VHDX image of the selected volume(s) (non-destructive). For full device-to-device block cloning you should use Clonezilla from bootable media. This button will prompt for destination and ask for confirmation before running any elevated operations.")
+    $btn.Tag = @{ ToolTip = $tt }
 
     $btn.Add_Click({
         try {

@@ -11,7 +11,12 @@ function Add-UseRecoveryButton {
     $btn.Size = $Size
     $btn.Location = $Location
     $tt = New-Object System.Windows.Forms.ToolTip
-    $tt.SetToolTip($btn, 'Use an existing recovery drive (placeholder - action is non-destructive).')
+    $tt.AutoPopDelay = 20000
+    $tt.InitialDelay = 300
+    $tt.ReshowDelay = 100
+    $tt.ShowAlways = $true
+    $tt.SetToolTip($btn, 'Open Windows Recovery options (Settings > Recovery) so you can boot from or use existing recovery media. This control does not modify disks directly; follow on-screen instructions in the system interface to apply recovery media.')
+    $btn.Tag = @{ ToolTip = $tt }
 
     $btn.Add_Click({
         try {

@@ -11,7 +11,12 @@ function Add-CreateRecoveryButton {
     $btn.Size = $Size
     $btn.Location = $Location
     $tt = New-Object System.Windows.Forms.ToolTip
-    $tt.SetToolTip($btn, 'Create a recovery drive (placeholder - no drive will be created).')
+    $tt.AutoPopDelay = 20000
+    $tt.InitialDelay = 300
+    $tt.ReshowDelay = 100
+    $tt.ShowAlways = $true
+    $tt.SetToolTip($btn, 'Launch the Windows Recovery Drive creation tool (recoverydrive.exe) or open the Settings Recovery page. This launches the system tool; you will need a USB drive and explicit confirmation to create a recovery drive.')
+    $btn.Tag = @{ ToolTip = $tt }
 
     $btn.Add_Click({
         try {
