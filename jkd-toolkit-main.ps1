@@ -150,14 +150,14 @@ $grpTools.Controls.Add($flowTools)
 
 $grpMaint = New-Object System.Windows.Forms.GroupBox
 $grpMaint.Text = 'Maintenance'
-$grpMaint.Size = New-Object System.Drawing.Size(360,280)
+$grpMaint.Size = New-Object System.Drawing.Size(360,420)
 $grpMaint.Location = New-Object System.Drawing.Point(220,10)
 $tabTools.Controls.Add($grpMaint)
 
 # Create Networking group next to Maintenance
 $grpNet = New-Object System.Windows.Forms.GroupBox
 $grpNet.Text = 'Networking'
-$grpNet.Size = New-Object System.Drawing.Size(360,360)
+$grpNet.Size = New-Object System.Drawing.Size(360,420)
 $grpNet.Location = New-Object System.Drawing.Point(590,10)
 $tabTools.Controls.Add($grpNet)
 
@@ -381,12 +381,32 @@ $grpImage.Controls.Add($chkLimit)
 # Create nested 'Disk' group inside Maintenance for disk tools like chkdsk
 $grpDisk = New-Object System.Windows.Forms.GroupBox
 $grpDisk.Text = 'Disk'
-$grpDisk.Size = New-Object System.Drawing.Size(340,60)
+$grpDisk.Size = New-Object System.Drawing.Size(340,160)
 $grpDisk.Location = New-Object System.Drawing.Point(10,210)
 $grpMaint.Controls.Add($grpDisk)
 
-# Add Check Disk button into Disk group
-Add-CheckDiskButton -Parent $grpDisk -Location (New-Object System.Drawing.Point(10,15)) -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
+# Create a FlowLayoutPanel inside the Disk group so buttons auto-arrange left-to-right
+$flowDisk = New-Object System.Windows.Forms.FlowLayoutPanel
+$flowDisk.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
+$flowDisk.WrapContents = $true
+$flowDisk.AutoSize = $true
+$flowDisk.AutoSizeMode = 'GrowOnly'
+$flowDisk.Dock = 'Fill'
+$grpDisk.Controls.Add($flowDisk)
+
+# Add existing Check Disk button into Disk group flow
+Add-CheckDiskButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
+
+# Dot-source new disk controls and add their buttons
+. "$PSScriptRoot\Controls\FormatDisksControl.ps1"
+. "$PSScriptRoot\Controls\CloneDiskControl.ps1"
+. "$PSScriptRoot\Controls\CreateRecoveryControl.ps1"
+. "$PSScriptRoot\Controls\UseRecoveryControl.ps1"
+
+Add-FormatDisksButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
+Add-CloneDiskButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
+Add-CreateRecoveryButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
+Add-UseRecoveryButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
 
 
 # Applications tab: Get Installed Applications control
