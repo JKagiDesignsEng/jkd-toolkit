@@ -401,12 +401,10 @@ Add-CheckDiskButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,
 
 # Dot-source new disk controls and add their buttons
 . "$PSScriptRoot\Controls\FormatDisksControl.ps1"
-. "$PSScriptRoot\Controls\CloneDiskControl.ps1"
 . "$PSScriptRoot\Controls\CreateRecoveryControl.ps1"
 . "$PSScriptRoot\Controls\UseRecoveryControl.ps1"
 
 Add-FormatDisksButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
-Add-CloneDiskButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
 Add-CreateRecoveryButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
 Add-UseRecoveryButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
 
