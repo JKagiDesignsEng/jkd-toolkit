@@ -1,374 +1,124 @@
-# JKD-Toolkit - Windows 11 Tech Toolkit
+# JKD Toolkit (PowerShell WinForms)
 
-A comprehensive PowerShell-based GUI toolkit designed for IT professionals, technicians, and power users to troubleshoot, repair, and set up Windows 11 systems. This portable toolkit provides an intuitive tabbed interface for common system maintenance tasks, driver management, application installation/removal, and system diagnostics.
+A portable PowerShell-based GUI to perform common Windows maintenance, networking, and app management tasks. The UI is built with WinForms and prints results to the console for transparency.
 
-## 🚀 Features
+## Requirements
 
-### 📊 System Overview
-- **System Information Display**: Real-time hardware and software details (CPU, RAM, GPU, OS version, uptime)
-- **System Report Export**: Generate detailed JSON reports for documentation or support tickets
-- **Network Configuration**: Display current IP address, domain, and system specifications
+- Windows 10 or 11
+- PowerShell 5.1 (Windows PowerShell) or later
+- .NET Framework (preinstalled on Windows)
+- Administrator privileges for most operations (the app will prompt to elevate)
+- Optional: `winget` and/or `choco` on PATH for the Applications tab
 
-### 🌐 Network Diagnostics & Repair
-- **DNS Management**: Flush DNS cache to resolve web browsing issues
-- **IP Address Renewal**: Release and renew DHCP IP assignments
-- **Network Stack Reset**: Full Winsock and TCP/IP reset for stubborn connectivity problems
-- **Connectivity Testing**: Automated tests for HTTP access and ping connectivity (1.1.1.1, 8.8.8.8)
-- **Custom Ping Tool**: Test specific hosts with detailed response time and status information
+## Quick start
 
-### 🔧 System Repairs
-- **SFC (System File Checker)**: Scan and repair corrupted Windows system files
-- **DISM RestoreHealth**: Repair Windows image corruption and system health issues
-- **Windows Update Cache Reset**: Clear stuck update downloads and reset Windows Update services
-- **Print Spooler Restart**: Fix printing problems by restarting the print service
-- **Windows Firewall Reset**: Restore firewall settings to defaults
+Run from an elevated PowerShell console (or allow the app to self-elevate):
 
-### 🧹 System Maintenance
-- **Temporary File Cleanup**: Remove temporary files from system and user directories
-- **System Restore Point Creation**: Create backup snapshots before making system changes
-- **Installed Programs Export**: Generate CSV reports of all installed software
-- **Driver Inventory Export**: Create comprehensive driver lists for documentation
-
-### 🔒 Privacy & Debloating Tools
-- **O&O ShutUp10++ Integration**: Download and launch the popular privacy configuration tool
-- **Windows Privacy Fixes**: Apply common privacy settings (disable telemetry, advertising ID, location tracking)
-- **Windows Debloater**: Remove common bloatware and unnecessary Windows applications
-- **Cortana Disable**: Turn off Cortana and related data collection
-
-### 🎨 Windows Customization
-- **Dark/Light Mode Toggle**: Switch between Windows themes instantly
-- **WSL Installation**: Install Windows Subsystem for Linux with Ubuntu support
-- **Custom Wallpaper**: Browse and set desktop wallpapers with proper scaling
-
-### 💾 Software Management
-- **Package Manager Support**: Install and manage WinGet and Chocolatey
-- **Application Search**: Find and install software from WinGet and Chocolatey repositories
-- **Bulk Installation**: Install multiple applications simultaneously
-- **Application Uninstaller**: Remove installed programs with advanced deduplication
-- **Smart Application Detection**: Comprehensive scanning across WinGet, registry, and system sources
-
-### 🔍 Driver Management
-- **Missing Driver Detection**: Scan for missing, corrupted, or problematic drivers
-- **Offline Driver Support**: Special guidance for systems without internet connectivity
-- **Network Driver Priority**: Identify critical network driver issues that prevent internet access
-- **Driver Installation Guidance**: Step-by-step instructions for manual driver installation
-
-### ⚙️ System Setup & Optimization
-- **Windows Features Installation**: Enable useful Windows components (WSL, Hyper-V, Virtual Machine Platform)
-- **Performance Optimization**: Apply system tweaks for improved speed and responsiveness
-- **Service Management**: Disable unnecessary services for better performance
-- **Power Plan Optimization**: Set high-performance power settings
-
-### 🛠️ Administrative Tools Launcher
-Quick access to essential Windows management tools:
-- Device Manager
-- Event Viewer
-- Services Manager
-- Task Manager
-- Windows Update Settings
-- Startup Apps Manager
-
-### 🔄 Auto-Update System
-- **Automatic Update Checking**: Checks for new versions every 24 hours
-- **Silent Background Updates**: Non-intrusive update notifications
-- **Manual Update Control**: Force check for updates via Tools tab
-- **Backup Protection**: Automatic backups before applying updates
-- **Dual Update Channels**: Both stable releases and development updates
-- **Version Management**: Detailed version tracking and comparison
-- **Rollback Support**: Easy restoration from automatic backups
-
-## 📋 System Requirements
-
-- **Operating System**: Windows 11 (optimized for, may work on Windows 10)
-- **PowerShell**: Version 5.1 or later
-- **Privileges**: Administrator rights (toolkit will auto-elevate)
-- **Dependencies**: .NET Framework (typically pre-installed)
-- **Storage**: Minimal footprint, creates Logs and Exports folders
-
-## 🚦 Getting Started
-
-### Quick Installation (Recommended)
-
-#### One-Line Web Installer 🌐
-The fastest way to install and run JKD-Toolkit:
-
-```powershell
-irm "https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/main/install.ps1" | iex
-```
-
-**What this does:**
-- **Automatically elevates** to administrator privileges if needed
-- Downloads and installs the complete toolkit to `C:\Tools\JKD-Toolkit`
-- Creates a desktop shortcut for easy access
-- Adds the toolkit to your system PATH
-- Automatically handles all dependencies
-
-**No Admin Required to Start:** Just run the command from any PowerShell window - it will request elevation automatically!
-
-**Custom Installation Options:**
-```powershell
-# Install to custom location
-irm "https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/main/install.ps1" | iex -InstallPath "D:\MyTools\JKD-Toolkit"
-
-# Install and auto-launch
-irm "https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/main/install.ps1" | iex -AutoLaunch
-
-# Force overwrite existing installation
-irm "https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/main/install.ps1" | iex -Force
-```
-
-### Manual Installation
-1. Download or clone this repository to your desired location (USB drive recommended for portability)
-2. Ensure all required files are in the same directory:
-   - `jkd-toolkit-main.ps1` (main application)
-   - `Toolkit.Helpers.ps1` (helper functions)
-   - `Toolkit.Actions.ps1` (action implementations)
-   - `JKD-icon.ico` (application icon)
-   - `install.ps1` (web installer)
-3. Run the main script using one of the methods below
-
-### Running the Toolkit
-
-#### Method 1: Desktop Shortcut (After Web Install)
-```
-Double-click the "JKD-Toolkit" shortcut on your desktop
-```
-
-#### Method 2: Right-Click Execution
-```
-Right-click jkd-toolkit-main.ps1 → "Run with PowerShell"
-```
-
-#### Method 3: PowerShell Command Line
 ```powershell
 powershell -ExecutionPolicy Bypass -File ".\jkd-toolkit-main.ps1"
 ```
 
-#### Method 4: From Anywhere (After Web Install)
+Or install quickly with the provided installer one-liner (v2 branch):
+
 ```powershell
+irm 'https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/v2/install.ps1' | iex
+```
+
+The installer will:
+
+- Download and extract the latest v2 branch
+- Install to `$env:LOCALAPPDATA\jkd-toolkit` by default
+- Create a desktop shortcut "JKD Toolkit" for easy access
+- Create a launcher script for command-line use
+
+## What’s included
+
+The app opens a single window with two tabs: `Tools` and `Applications`.
+
+### Tools tab
+
+Grouped areas: Quick Tools, Maintenance, and Networking.
+
+Quick Tools (examples):
+
+- Toggle Dark Mode
+- Check/Hide Activation
+- Run O&O ShutUp2 (if available)
+- Set Wallpaper
+- Run Microsoft Update (best-effort workflow)
+- Run Windows Defender
+- Run Microsoft Malicious Software Removal
+- Update Toolkit (check for and install latest version from GitHub)
+
+Maintenance (examples):
+
+- DISM image checks and RestoreHealth (optional `/LimitAccess`)
+- Check disk (chkdsk)
+
+Disk tools (new in v2):
+
+- Format Disks: Opens Windows Disk Management so you can partition, format, or prepare drives manually. The toolkit does not perform destructive formatting directly; use Disk Management or dedicated imaging tools for destructive operations.
+- Create Recovery: Launches the Windows Recovery Drive creation tool (`recoverydrive.exe`) or opens the Settings > Recovery page so you can create a USB recovery drive. Requires a USB drive and explicit confirmation in the system tool.
+- Use Recovery: Opens Settings > Recovery so you can boot from or apply existing recovery media.
+
+Networking (examples):
+
+- Ping: `Test-Connection -ComputerName <target> -Count 4`
+- TraceRoute: `Test-NetConnection -ComputerName <target> -TraceRoute`
+- Get Network Configuration: `Get-NetIPConfiguration`
+- Show Network Passwords (uses `netsh wlan`)
+
+All outputs from Tools print to the console.
+
+### Applications tab
+
+- Installed: lists installed software from registry uninstall keys
+- Search (winget/choco): queries `winget` and/or `choco` for packages
+- Install Selected / Uninstall Selected: runs `winget`/`choco` or uses registry UninstallString
+
+Notes: `winget` and `choco` must be on PATH to use those sources.
+
+## Troubleshooting
+
+- `winget` not recognized: install App Installer from Microsoft
+- `choco` not recognized: install Chocolatey
+- Execution policy blocks the script: run with `-ExecutionPolicy Bypass`
+- Jobs: background jobs are per PowerShell session; use the same console to query job output
+
+## Repository layout
+
+```text
+README.md
+install.ps1
 jkd-toolkit-main.ps1
+Controls/
+   ActivationControl.ps1
+   CheckDiskControl.ps1
+   CheckHealthControl.ps1
+   GetInstalledApplicationsControl.ps1
+   GetNetworkConfigurationControl.ps1
+   NetworkPasswordControl.ps1
+   OOSUControl.ps1
+   RestoreHealthControl.ps1
+   RestoreHealthFromISOControl.ps1
+   ToggleDarkModeControl.ps1
+   TraceRouteControl.ps1
+   WallpaperControl.ps1
+   RunMicrosoftUpdateControl.ps1
+   Helpers/
+      DiskSpaceHelper.ps1
+Resources/
+   JKD-icon.ico
 ```
 
-> **Note**: The toolkit will automatically request administrator privileges if not already elevated.
+## License
 
-## 📁 File Structure
+Copyright © JKagiDesigns LLC. All rights reserved.
 
-```
-jkd-toolkit/
-├── jkd-toolkit-main.ps1          # Main GUI application
-├── Toolkit.Helpers.ps1            # Helper functions and utilities
-├── Toolkit.Actions.ps1            # Core action implementations
-├── install.ps1                    # Web installer script
-├── JKD-icon.ico                   # Application icon (optional)
-├── README.md                      # This documentation
-├── Logs/                          # Auto-created log directory
-│   └── Toolkit.log               # Detailed operation logs
-└── Exports/                       # Auto-created export directory
-    ├── SystemReport_*.json        # System information exports
-    ├── InstalledPrograms_*.csv    # Software inventory exports
-    └── Drivers_*.txt              # Driver inventory exports
-```
+This toolkit is intended for IT professionals and advanced users. Test changes in a safe environment before applying to production systems.
 
-## 🌐 Web Installer Features
+Safety notes:
 
-The web installer (`install.ps1`) provides a seamless installation experience similar to popular tools like Chris Titus Tech's Windows Utility.
-
-### Key Features
-- **One-Line Installation**: Simple `irm | iex` command for instant setup
-- **Auto-Elevation**: Automatically requests administrator privileges if needed
-- **Automatic Prerequisites**: Checks for admin rights and internet connectivity
-- **Smart Downloading**: Fetches latest files from GitHub repository
-- **Desktop Integration**: Creates shortcuts and adds to system PATH
-- **Version Aware**: Optionally fetches latest release information
-- **Safety Checks**: Prevents overwriting without confirmation
-- **Error Handling**: Comprehensive error checking and user-friendly messages
-- **Cross-Platform**: Works on any Windows system with PowerShell 5.1+
-
-### Hosting Your Own Instance
-
-To host your own version of the installer:
-
-1. **Fork the Repository**: Create your own GitHub fork
-2. **Update Configuration**: Edit the installer script variables:
-   ```powershell
-   $RepoOwner = "YourGitHubUsername"
-   $RepoName = "your-toolkit-repo"
-   ```
-3. **Host on GitHub Pages**: Enable GitHub Pages for easy access
-4. **Custom Domain**: Optionally use your own domain for the installer URL
-
-### Installation Process
-The web installer performs these steps:
-1. **Auto-elevates to administrator** if not already running as admin
-2. Validates administrator privileges
-3. Checks internet connectivity
-4. Creates installation directory (`C:\Tools\JKD-Toolkit` by default)
-5. Downloads all required files from GitHub
-6. Creates desktop shortcut with proper icon
-7. Adds toolkit to system PATH for global access
-8. Optionally launches the toolkit immediately
-
-### Auto-Update System 🔄
-The toolkit includes intelligent auto-update functionality:
-
-**Automatic Checking:**
-- Checks for updates every 24 hours when launched
-- Silent background checking (non-intrusive)
-- Compares both release versions and development commits
-- Respects user preferences and connection availability
-
-**Update Process:**
-- Creates automatic backups before updating
-- Downloads latest files directly from GitHub
-- Restarts toolkit with new version
-- Preserves user settings and logs
-
-**Manual Updates:**
-- "Check for Updates" button in Tools tab
-- Force update checking regardless of schedule
-- Detailed version and commit information
-- User-controlled update installation
-
-**Update Types:**
-- **Release Updates**: Official tagged versions with new features
-- **Development Updates**: Latest commits with bug fixes and improvements
-- **Rollback Support**: Automatic backups allow reverting if needed
-
-### Security Considerations
-- **HTTPS Only**: All downloads use secure HTTPS connections
-- **Official Sources**: Downloads only from verified GitHub repositories
-- **Admin Required**: Prevents unauthorized system-level installations
-- **User Confirmation**: Asks before overwriting existing installations
-- **Transparent Logging**: All actions are clearly displayed to the user
-
-## 🔧 Features Deep Dive
-
-### Package Manager Integration
-The toolkit supports both major Windows package managers:
-
-**WinGet (Microsoft Store)**
-- Built into Windows 11
-- Official Microsoft package repository
-- Automatic security verification
-- Integration with Microsoft Store apps
-
-**Chocolatey (Community)**
-- Large community repository
-- Extensive software selection
-- Community-maintained packages
-- Advanced package management features
-
-### Advanced Application Management
-- **Intelligent Deduplication**: Combines WinGet and registry data for comprehensive application lists
-- **Source Prioritization**: Prefers WinGet entries over registry for accuracy
-- **Truncation Handling**: Resolves name truncation issues in package managers
-- **Bulk Operations**: Install or uninstall multiple applications simultaneously
-- **Safe Uninstallation**: Confirmation dialogs and detailed logging prevent accidental removal
-
-### Driver Diagnostics
-The toolkit provides comprehensive driver analysis:
-- **Error Code Detection**: Identifies devices with error codes 28, 31, 37, 39, 43
-- **Unknown Device Detection**: Finds unrecognized hardware
-- **Network Priority**: Special handling for network adapter issues
-- **Offline Support**: Provides manual installation guidance when internet is unavailable
-- **Detailed Reporting**: Saves driver reports to desktop for reference
-
-### Privacy & Security
-- **Telemetry Disable**: Turn off Windows data collection
-- **Advertising ID**: Disable personalized advertising
-- **Location Tracking**: Turn off location services
-- **Feedback Requests**: Disable Windows feedback prompts
-- **Bloatware Removal**: Remove unnecessary pre-installed applications
-
-## 📝 Logging
-
-All operations are automatically logged to `Logs\Toolkit.log` with:
-- Timestamp for each operation
-- Success/failure status
-- Detailed error messages
-- User actions and system responses
-
-Log format:
-```
-[2024-01-15 14:30:25][INFO] Started: SFC /SCANNOW
-[2024-01-15 14:35:12][INFO] Completed: SFC /SCANNOW
-[2024-01-15 14:36:45][WARN] Not elevated. Relaunching as admin...
-```
-
-## 🔐 Security Considerations
-
-- **Administrator Privileges**: Required for system-level operations
-- **Auto-Elevation**: Safely requests admin rights when needed
-- **Execution Policy**: Bypasses PowerShell restrictions temporarily
-- **Source Verification**: Downloads from official sources only
-- **Logging**: All actions are logged for audit trails
-
-## 🤝 Contributing
-
-This toolkit is developed by JKagiDesigns LLC. Contributions, bug reports, and feature requests are welcome.
-
-### Development Setup
-1. Clone the repository
-2. Ensure PowerShell 5.1+ is installed
-3. Test changes in isolated environment
-4. Verify admin elevation works correctly
-5. Update documentation for new features
-
-## ⚠️ Important Notes
-
-- **Internet Connection**: Some features require internet access (driver updates, package installation)
-- **Reboot Requirements**: Some operations may require system restart
-- **Backup Recommendation**: Create system restore point before major changes
-- **Antivirus**: Some antivirus software may flag PowerShell execution
-- **USB Friendly**: Designed to run from portable drives
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**"Execution Policy Restriction"**
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
-```
-
-**"Access Denied" Errors**
-- Ensure running as administrator
-- Check antivirus blocking PowerShell
-- Verify file permissions
-
-**"Module Not Found" Errors**
-- Ensure all three .ps1 files are in same directory
-- Check file paths for special characters
-- Verify files aren't corrupted
-
-**Network Tools Not Working**
-- Check internet connectivity
-- Verify Windows firewall settings
-- Test with different DNS servers
-
-## 📞 Support
-
-- **Author**: ChatGPT for Josh (JKagiDesigns / Cultivatronics)
-- **Purpose**: USB-friendly Windows 11 troubleshooting and setup
-- **License**: Proprietary - JKagiDesigns LLC
-
-## 🔄 Version History
-
-### Current Features
-- Tabbed WinForms GUI interface
-- Comprehensive system diagnostics
-- Advanced application management
-- Driver detection and management
-- Privacy and customization tools
-- Automated logging and reporting
-
-### Future Enhancements
-- Additional package managers support
-- Enhanced driver installation automation
-- More customization options
-- Scheduled maintenance tasks
-- Integration with cloud storage for reports
-
----
-
-*This toolkit is designed for IT professionals and advanced users. Always test in a safe environment before deploying to production systems.*
+- Always verify the destination drive when performing clone or format operations. Mistargeting can result in data loss.
+- `disk2vhd` creates virtual disk images (VHD/VHDX) and is non-destructive to the source, but images can be large — ensure you have sufficient free space.
+- For bit-for-bit device cloning use Clonezilla from bootable media; the toolkit offers guidance but does not automate creating Clonezilla media.
