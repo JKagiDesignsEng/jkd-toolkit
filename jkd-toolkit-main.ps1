@@ -121,7 +121,7 @@ function Clear-StatusBar {
 # Create two group boxes: Tools and Maintenance
 $tabLeft = New-Object System.Windows.Forms.TabControl
 $tabLeft.Location = New-Object System.Drawing.Point(10,10)
-$tabLeft.Size = New-Object System.Drawing.Size(980,480)
+$tabLeft.Size = New-Object System.Drawing.Size(980,490)
 $tabLeft.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom)
 
 $tabTools = New-Object System.Windows.Forms.TabPage 'Tools'
@@ -133,7 +133,7 @@ $form.Controls.Add($tabLeft)
 # Create the Tools groupbox and put it inside the Tools tab so existing Add-* calls continue to work
 $grpTools = New-Object System.Windows.Forms.GroupBox
 $grpTools.Text = 'Quick Tools'
-$grpTools.Size = New-Object System.Drawing.Size(200,420)
+$grpTools.Size = New-Object System.Drawing.Size(200,450)
 $grpTools.Location = New-Object System.Drawing.Point(10,10)
 $grpTools.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left)
 $tabTools.Controls.Add($grpTools)
@@ -150,14 +150,14 @@ $grpTools.Controls.Add($flowTools)
 
 $grpMaint = New-Object System.Windows.Forms.GroupBox
 $grpMaint.Text = 'Maintenance'
-$grpMaint.Size = New-Object System.Drawing.Size(360,420)
+$grpMaint.Size = New-Object System.Drawing.Size(360,450)
 $grpMaint.Location = New-Object System.Drawing.Point(220,10)
 $tabTools.Controls.Add($grpMaint)
 
 # Create Networking group next to Maintenance
 $grpNet = New-Object System.Windows.Forms.GroupBox
 $grpNet.Text = 'Networking'
-$grpNet.Size = New-Object System.Drawing.Size(360,420)
+$grpNet.Size = New-Object System.Drawing.Size(360,450)
 $grpNet.Location = New-Object System.Drawing.Point(590,10)
 $tabTools.Controls.Add($grpNet)
 
@@ -341,6 +341,8 @@ Add-CheckAndFixDriversControl -Parent $flowTools | Out-Null
 Add-RunWindowsDefenderButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,270)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 . "$PSScriptRoot\Controls\RunMMRControl.ps1"
 Add-RunMMRButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,320)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
+. "$PSScriptRoot\Controls\UpdateControl.ps1"
+Add-UpdateButton -Parent $flowTools -Location (New-Object System.Drawing.Point(10,370)) -Size (New-Object System.Drawing.Size(160,40)) | Out-Null
 
 # Add CheckHealth and RestoreHealth controls to the Maintenance group
 . "$PSScriptRoot\Controls\CheckHealthControl.ps1"

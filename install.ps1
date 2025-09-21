@@ -45,8 +45,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File `"$InstallDir\jkd-to
 "@
     $launcherContent | Set-Content -Path $launcher -Encoding UTF8
 
+    # Create desktop shortcut
+    try {
+        $WshShell = New-Object -ComObject WScript.Shell
+        $desktopPath = [Environment]::GetFolderPath('Desktop')
+        $shortcutPath = Join-Path $desktopPath 'JKD Toolkit.lnk'
+        $Shortcut = $WshShell.CreateShortcut($shortcutPath)
+        $Shortcut.TargetPath = 'powershell.exe'
+        $Shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -NoExit -File `"$InstallDir\jkd-toolkit-main.ps1`""
+        $Shortcut.WorkingDirectory = $InstallDir
+        $Shortcut.Description = 'JKD Toolkit - Windows maintenance and networking tools'
+        $iconPath = Join-Path $InstallDir 'Resources\jkd-icon.ico'
+        if (Test-Path $iconPath) { $Shortcut.IconLocation = $iconPath }
+        $Shortcut.Save()
+        Write-Log "Desktop shortcut created: $shortcutPath"
+    } catch {
+        Write-Log "Warning: Could not create desktop shortcut: $($_.Exception.Message)"
+    }
+
     Write-Log "Installation complete."
-    Write-Log "Run the toolkit with:`n  PowerShell: & '$launcher'`n  Or: powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File '$InstallDir\jkd-toolkit-main.ps1'"
+    Write-Log "Run the toolkit with:`n  Desktop shortcut: 'JKD Toolkit'`n  PowerShell: & '$launcher'`n  Or: powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File '$InstallDir\jkd-toolkit-main.ps1'"
 } catch {
     Write-Host "Installation failed: $($_.Exception.Message)"
     exit 1

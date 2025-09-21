@@ -24,6 +24,13 @@ Or install quickly with the provided installer one-liner (v2 branch):
 irm 'https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/v2/install.ps1' | iex
 ```
 
+The installer will:
+
+- Download and extract the latest v2 branch
+- Install to `$env:LOCALAPPDATA\jkd-toolkit` by default
+- Create a desktop shortcut "JKD Toolkit" for easy access
+- Create a launcher script for command-line use
+
 ## What’s included
 
 The app opens a single window with two tabs: `Tools` and `Applications`.
@@ -39,6 +46,9 @@ Quick Tools (examples):
 - Run O&O ShutUp2 (if available)
 - Set Wallpaper
 - Run Microsoft Update (best-effort workflow)
+- Run Windows Defender
+- Run Microsoft Malicious Software Removal
+- Update Toolkit (check for and install latest version from GitHub)
 
 Maintenance (examples):
 
