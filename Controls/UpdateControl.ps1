@@ -17,7 +17,7 @@ function Add-UpdateButton {
     $tt.InitialDelay = 300
     $tt.ReshowDelay = 100
     $tt.ShowAlways = $true
-    $tt.SetToolTip($btn, 'Check for updates and download the latest version of JKD Toolkit from GitHub. This will download and install the latest v2 branch release, preserving your current installation directory.')
+    $tt.SetToolTip($btn, 'Check for updates and download the latest version of JKD Toolkit from GitHub. This will download and install the latest main branch release, preserving your current installation directory.')
     $btn.Tag = @{ ToolTip = $tt }
 
     $btn.Add_Click({
@@ -69,7 +69,7 @@ function Add-UpdateButton {
             $lblStatus.Refresh()
 
             # Download and extract update
-            $zipUrl = 'https://github.com/JKagiDesignsEng/jkd-toolkit/archive/refs/heads/v2.zip'
+            $zipUrl = 'https://github.com/JKagiDesignsEng/jkd-toolkit/archive/refs/heads/main.zip'
             $tmpZip = Join-Path $env:TEMP ("jkd-toolkit-update-" + [guid]::NewGuid().ToString() + ".zip")
             
             try {

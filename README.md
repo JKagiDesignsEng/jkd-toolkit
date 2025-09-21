@@ -18,15 +18,15 @@ Run from an elevated PowerShell console (or allow the app to self-elevate):
 powershell -ExecutionPolicy Bypass -File ".\jkd-toolkit-main.ps1"
 ```
 
-Or install quickly with the provided installer one-liner (v2 branch):
+Or install quickly with the provided installer one-liner (main branch):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/v2/install.ps1' | iex
+irm 'https://raw.githubusercontent.com/JKagiDesignsEng/jkd-toolkit/main/install.ps1' | iex
 ```
 
 The installer will:
 
-- Download and extract the latest v2 branch
+- Download and extract the latest main branch
 - Install to `$env:LOCALAPPDATA\jkd-toolkit` by default
 - Create a desktop shortcut "JKD Toolkit" for easy access
 - Create a launcher script for command-line use
@@ -55,7 +55,7 @@ Maintenance (examples):
 - DISM image checks and RestoreHealth (optional `/LimitAccess`)
 - Check disk (chkdsk)
 
-Disk tools (new in v2):
+Disk tools (new in main):
 
 - Format Disks: Opens Windows Disk Management so you can partition, format, or prepare drives manually. The toolkit does not perform destructive formatting directly; use Disk Management or dedicated imaging tools for destructive operations.
 - Create Recovery: Launches the Windows Recovery Drive creation tool (`recoverydrive.exe`) or opens the Settings > Recovery page so you can create a USB recovery drive. Requires a USB drive and explicit confirmation in the system tool.

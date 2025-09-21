@@ -7,7 +7,7 @@ function Write-Log { param($m) Write-Host $m }
 
 try {
     Write-Log "JKD Toolkit installer"
-    $zipUrl = 'https://github.com/JKagiDesignsEng/jkd-toolkit/archive/refs/heads/v2.zip'
+    $zipUrl = 'https://github.com/JKagiDesignsEng/jkd-toolkit/archive/refs/heads/main.zip'
     Write-Log "Downloading release from: $zipUrl"
 
     $tmpZip = Join-Path $env:TEMP ("jkd-toolkit-" + [guid]::NewGuid().ToString() + ".zip")
