@@ -67,7 +67,7 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # Create form
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'JKD Toolkit'
-$form.Size = New-Object System.Drawing.Size(1040, 560)
+$form.Size = New-Object System.Drawing.Size(1040, 600)
 $form.StartPosition = 'CenterScreen'
 $iconPath = Join-Path -Path $PSScriptRoot -ChildPath 'Resources\jkd-icon.ico'
 if (Test-Path -Path $iconPath) {
@@ -121,7 +121,7 @@ function Clear-StatusBar {
 # Create two group boxes: Tools and Maintenance
 $tabLeft = New-Object System.Windows.Forms.TabControl
 $tabLeft.Location = New-Object System.Drawing.Point(10,10)
-$tabLeft.Size = New-Object System.Drawing.Size(980,490)
+$tabLeft.Size = New-Object System.Drawing.Size(980,530)
 $tabLeft.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom)
 
 $tabTools = New-Object System.Windows.Forms.TabPage 'Tools'
@@ -133,7 +133,7 @@ $form.Controls.Add($tabLeft)
 # Create the Tools groupbox and put it inside the Tools tab so existing Add-* calls continue to work
 $grpTools = New-Object System.Windows.Forms.GroupBox
 $grpTools.Text = 'Quick Tools'
-$grpTools.Size = New-Object System.Drawing.Size(200,450)
+$grpTools.Size = New-Object System.Drawing.Size(200,490)
 $grpTools.Location = New-Object System.Drawing.Point(10,10)
 $grpTools.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left)
 $tabTools.Controls.Add($grpTools)
@@ -150,14 +150,14 @@ $grpTools.Controls.Add($flowTools)
 
 $grpMaint = New-Object System.Windows.Forms.GroupBox
 $grpMaint.Text = 'Maintenance'
-$grpMaint.Size = New-Object System.Drawing.Size(360,450)
+$grpMaint.Size = New-Object System.Drawing.Size(360,480)
 $grpMaint.Location = New-Object System.Drawing.Point(220,10)
 $tabTools.Controls.Add($grpMaint)
 
 # Create Networking group next to Maintenance
 $grpNet = New-Object System.Windows.Forms.GroupBox
 $grpNet.Text = 'Networking'
-$grpNet.Size = New-Object System.Drawing.Size(360,450)
+$grpNet.Size = New-Object System.Drawing.Size(360,480)
 $grpNet.Location = New-Object System.Drawing.Point(590,10)
 $tabTools.Controls.Add($grpNet)
 
@@ -383,7 +383,7 @@ $grpImage.Controls.Add($chkLimit)
 # Create nested 'Disk' group inside Maintenance for disk tools like chkdsk
 $grpDisk = New-Object System.Windows.Forms.GroupBox
 $grpDisk.Text = 'Disk'
-$grpDisk.Size = New-Object System.Drawing.Size(340,160)
+$grpDisk.Size = New-Object System.Drawing.Size(340,200)
 $grpDisk.Location = New-Object System.Drawing.Point(10,210)
 $grpMaint.Controls.Add($grpDisk)
 
@@ -403,10 +403,12 @@ Add-CheckDiskButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,
 . "$PSScriptRoot\Controls\FormatDisksControl.ps1"
 . "$PSScriptRoot\Controls\CreateRecoveryControl.ps1"
 . "$PSScriptRoot\Controls\UseRecoveryControl.ps1"
+. "$PSScriptRoot\Controls\BackupFilesToDiskControl.ps1"
 
 Add-FormatDisksButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
 Add-CreateRecoveryButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
 Add-UseRecoveryButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
+Add-BackupFilesToDiskButton -Parent $flowDisk -Size (New-Object System.Drawing.Size(160,32)) | Out-Null
 
 
 # Applications tab: Get Installed Applications control
