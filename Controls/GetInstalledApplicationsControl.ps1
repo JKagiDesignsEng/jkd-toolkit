@@ -275,7 +275,7 @@ function Add-GetInstalledApplicationsControl {
     $panel.Controls.Add($btnUninstall)
 
     # Helper: load installed apps into grid
-    $appList = [System.Collections.Generic.List[object]]::new()
+    $appList = New-Object 'System.Collections.Generic.List[object]'
     # Store a reference to the list on the panel so handlers can recover it if closures misbehave
     $panel.Tag = @{ appList = $appList }
     function Update-InstalledAppsList {
@@ -508,7 +508,7 @@ function Add-GetInstalledApplicationsControl {
             # Use panel's appList if available, else create one
             $alist = $null
             if ($owner -and $owner.Tag -and $owner.Tag.appList) { $alist = $owner.Tag.appList }
-            if (-not $alist) { $alist = [System.Collections.Generic.List[object]]::new(); if ($owner) { $owner.Tag = @{ appList = $alist } } }
+            if (-not $alist) { $alist = New-Object 'System.Collections.Generic.List[object]'; if ($owner) { $owner.Tag = @{ appList = $alist } } }
 
             # Populate with installed apps
             $alist.Clear()
@@ -597,7 +597,7 @@ function Add-GetInstalledApplicationsControl {
             $alist = $null
             if ($panelRef -and $panelRef.Tag -and $panelRef.Tag.appList) { $alist = $panelRef.Tag.appList }
             if (-not $alist) {
-                $alist = [System.Collections.Generic.List[object]]::new()
+                $alist = New-Object 'System.Collections.Generic.List[object]'
                 if ($panelRef) { $panelRef.Tag = @{ appList = $alist } }
             }
             $alist.Clear()
@@ -678,7 +678,7 @@ function Add-GetInstalledApplicationsControl {
             $alist = $null
             if ($panelRef -and $panelRef.Tag -and $panelRef.Tag.appList) { $alist = $panelRef.Tag.appList }
             if (-not $alist) {
-                $alist = [System.Collections.Generic.List[object]]::new()
+                $alist = New-Object 'System.Collections.Generic.List[object]'
                 if ($panelRef) { $panelRef.Tag = @{ appList = $alist } }
             }
             $alist.Clear()

@@ -218,7 +218,7 @@ function Add-BackupFilesToDiskButton {
                 $totalSize = 0
                 $fileCount = 0
                 try {
-                    Get-ChildItem -Path $sourcePath -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Get-ChildItem -Path $sourcePath -Recurse -ErrorAction SilentlyContinue | Where-Object { !$_.PSIsContainer } | ForEach-Object {
                         $totalSize += $_.Length
                         $fileCount++
                     }

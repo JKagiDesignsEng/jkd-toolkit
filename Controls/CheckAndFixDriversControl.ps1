@@ -11,7 +11,7 @@ function Add-CheckAndFixDriversControl {
     $btn.Name = 'btnCheckFixDrivers'
     $btn.Text = 'Check & Fix Drivers'
     $btn.AutoSize = $false
-    $btn.Padding = [System.Windows.Forms.Padding]::new(6)
+    $btn.Padding = New-Object System.Windows.Forms.Padding(6)
     $btn.Tag = @{ Started = $false }
     $btn.Size = (New-Object System.Drawing.Size(160,40))
 
@@ -174,7 +174,7 @@ function Add-CheckAndFixDriversControl {
     })
     # Add to parent; support FlowLayoutPanel parents by using Margin
     if ($parent -is [System.Windows.Forms.FlowLayoutPanel]) {
-        $btn.Margin = [System.Windows.Forms.Padding]::new(6)
+        $btn.Margin = New-Object System.Windows.Forms.Padding(6)
         $parent.Controls.Add($btn)
     } else {
         # Place stacked vertically inside parent

@@ -67,7 +67,7 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # Create form
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'JKD Toolkit'
-$form.Size = New-Object System.Drawing.Size(1040, 600)
+$form.Size = New-Object System.Drawing.Size(1040, 650)
 $form.StartPosition = 'CenterScreen'
 $iconPath = Join-Path -Path $PSScriptRoot -ChildPath 'Resources\jkd-icon.ico'
 if (Test-Path -Path $iconPath) {
@@ -121,7 +121,7 @@ function Clear-StatusBar {
 # Create two group boxes: Tools and Maintenance
 $tabLeft = New-Object System.Windows.Forms.TabControl
 $tabLeft.Location = New-Object System.Drawing.Point(10,10)
-$tabLeft.Size = New-Object System.Drawing.Size(980,530)
+$tabLeft.Size = New-Object System.Drawing.Size(980,580)
 $tabLeft.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom)
 
 $tabTools = New-Object System.Windows.Forms.TabPage 'Tools'
@@ -133,7 +133,7 @@ $form.Controls.Add($tabLeft)
 # Create the Tools groupbox and put it inside the Tools tab so existing Add-* calls continue to work
 $grpTools = New-Object System.Windows.Forms.GroupBox
 $grpTools.Text = 'Quick Tools'
-$grpTools.Size = New-Object System.Drawing.Size(200,490)
+$grpTools.Size = New-Object System.Drawing.Size(200,540)
 $grpTools.Location = New-Object System.Drawing.Point(10,10)
 $grpTools.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left)
 $tabTools.Controls.Add($grpTools)
@@ -145,19 +145,19 @@ $flowTools.WrapContents = $false
 $flowTools.AutoSize = $false
 $flowTools.AutoScroll = $true
 $flowTools.Dock = 'Fill'
-$flowTools.Padding = [System.Windows.Forms.Padding]::new(6)
+$flowTools.Padding = New-Object System.Windows.Forms.Padding(6)
 $grpTools.Controls.Add($flowTools)
 
 $grpMaint = New-Object System.Windows.Forms.GroupBox
 $grpMaint.Text = 'Maintenance'
-$grpMaint.Size = New-Object System.Drawing.Size(360,480)
+$grpMaint.Size = New-Object System.Drawing.Size(360,540)
 $grpMaint.Location = New-Object System.Drawing.Point(220,10)
 $tabTools.Controls.Add($grpMaint)
 
 # Create Networking group next to Maintenance
 $grpNet = New-Object System.Windows.Forms.GroupBox
 $grpNet.Text = 'Networking'
-$grpNet.Size = New-Object System.Drawing.Size(360,480)
+$grpNet.Size = New-Object System.Drawing.Size(360,540)
 $grpNet.Location = New-Object System.Drawing.Point(590,10)
 $tabTools.Controls.Add($grpNet)
 
@@ -168,7 +168,7 @@ $flowNet.WrapContents = $false
 $flowNet.AutoSize = $false
 $flowNet.AutoScroll = $true
 $flowNet.Dock = 'Fill'
-$flowNet.Padding = [System.Windows.Forms.Padding]::new(6)
+$flowNet.Padding = New-Object System.Windows.Forms.Padding(6)
 $grpNet.Controls.Add($flowNet)
 
 # Global toggle for whether DISM should use /LimitAccess. The checkbox is placed inside the
@@ -383,7 +383,7 @@ $grpImage.Controls.Add($chkLimit)
 # Create nested 'Disk' group inside Maintenance for disk tools like chkdsk
 $grpDisk = New-Object System.Windows.Forms.GroupBox
 $grpDisk.Text = 'Disk'
-$grpDisk.Size = New-Object System.Drawing.Size(340,200)
+$grpDisk.Size = New-Object System.Drawing.Size(340,280)
 $grpDisk.Location = New-Object System.Drawing.Point(10,210)
 $grpMaint.Controls.Add($grpDisk)
 
