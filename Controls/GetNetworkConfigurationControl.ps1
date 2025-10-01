@@ -40,8 +40,8 @@ function Add-GetNetworkConfigurationButton {
 
     # Place checkbox and button inside the panel with spacing
     # Place controls
-    $chk.Location = [System.Drawing.Point]::new(4, ([int](($panel.Height - $chk.PreferredSize.Height) / 2)))
-    $btn.Location = [System.Drawing.Point]::new($chk.Location.X + $chk.PreferredSize.Width + $spacing, 0)
+    $chk.Location = New-Object System.Drawing.Point(4, ([int](($panel.Height - $chk.PreferredSize.Height) / 2)))
+    $btn.Location = New-Object System.Drawing.Point(($chk.Location.X + $chk.PreferredSize.Width + $spacing), 0)
 
     $panel.Controls.Add($chk)
     $panel.Controls.Add($btn)
